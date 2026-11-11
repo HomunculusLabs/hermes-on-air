@@ -1,5 +1,7 @@
 # Compatibility, install verification and troubleshooting
 
+Use this guide to check supported runtimes, installation, data and removal.
+
 This page says what On Air is tested on, how to install and remove it cleanly, where it keeps
 data, and how to diagnose the common startup problems without sharing anything private.
 

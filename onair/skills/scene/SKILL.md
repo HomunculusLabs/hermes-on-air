@@ -40,3 +40,7 @@ description: Use when setting up a 3D scene. Preview it safely.
 
 The overlay has no built-in avatar; this optional scene is owner-controlled. Never promise a camera,
 face tracking, avatar generation or guest/host video. See docs/scene.md and `on-air:scene-build`.
+
+## Hard rules
+
+Never go live, arm, approve a line, lift privacy or unmute on your own.

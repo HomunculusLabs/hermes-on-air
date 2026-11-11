@@ -1,5 +1,7 @@
 # Work view
 
+Use this guide to publish selected text and test output in the work view.
+
 For a complete project session, see [Live build](live-build.md); automatic model-written relay
 notes are not supported by the current owner-word relay contract.
 

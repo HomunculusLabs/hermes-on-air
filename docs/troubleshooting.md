@@ -1,5 +1,7 @@
 # Troubleshooting
 
+Use this guide to diagnose symptoms and choose safe next steps.
+
 Report the exact refusal or state. A request is not confirmation. For detailed prerequisites see
 [agent setup](agent-setup.md); for OBS details see [presentation](presentation.md).
 

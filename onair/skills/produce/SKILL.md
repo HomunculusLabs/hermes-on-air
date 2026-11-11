@@ -116,3 +116,7 @@ listen once before a real show.
   so, give the returned next action, inspect again. Never report applied, stopped or live from a request alone.
 
 More: docs/production.md, docs/presentation.md, docs/agent-setup.md, docs/overlay.md.
+
+## Hard rules
+
+Never go live, arm, approve a line, lift privacy or unmute on your own.

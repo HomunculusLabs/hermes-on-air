@@ -18,11 +18,11 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
         description="Without --create-home: print the settings to merge and preflight the CURRENT Hermes "
                     "home (nothing is written). With --create-home DIR: write a new, separate stage home "
                     "at DIR (which must not exist) and touch nothing else.")
-    setup.add_argument("--channel")
-    setup.add_argument("--host-name")
+    setup.add_argument("--channel", help="Twitch channel name")
+    setup.add_argument("--host-name", help="Host name used by the guard (default: Host)")
     setup.add_argument("--seed-bank", help="Seed-bank file (with --create-home: optional absolute path; "
                        "default writes a starter seed bank into the new home)")
-    setup.add_argument("--profanity", choices=("allow", "mask", "block"))
+    setup.add_argument("--profanity", choices=("allow", "mask", "block"), help="Output profanity policy (default: mask)")
     setup.add_argument("--yes", action="store_true", help="Do not prompt")
     setup.add_argument("--create-home", metavar="DIR",
                        help="Create a NEW dedicated stage HERMES_HOME at DIR (must not exist yet)")
@@ -31,29 +31,37 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
                        help="With --create-home: captions only (default) or Hermes text_to_speech")
     setup.add_argument("--overlay-port", type=int, help="With --create-home: loopback overlay port (default 18790)")
     setup.add_argument("--never-say", action="append", default=[],
-                       help="With --create-home: a word or phrase the host must never say (repeatable)")
-    scene = sub.add_parser('scene', help='Create the optional owner 3D scene')
-    scene.add_argument('scene_action', nargs='?', choices=('create', 'preview'), default='create')
+                       help="With --create-home: phrase to withhold from co-host output (repeatable)")
+    scene = sub.add_parser('scene', help='Create or preview the optional owner 3D scene',
+                           description='Create or preview the optional owner 3D scene.')
+    scene.add_argument('scene_action', nargs='?', choices=('create', 'preview'), default='create',
+                       help='Create the scene (default) or preview an existing scene')
     scene.add_argument('--force', action='store_true', help='Replace the existing scene (back up owner files first)')
-    sub.add_parser("voice-test", help="Test configured text-to-speech without playing audio")
-    preflight = sub.add_parser("preflight", help="Check stage isolation of the current Hermes home")
-    preflight.add_argument("--json", action="store_true")
-    rehearse = sub.add_parser("rehearse", help="Synthetic offline rehearsal: no Twitch, model, TTS or network")
+    sub.add_parser("voice-test", help="Test configured text-to-speech without playing audio",
+                   description="Test configured text-to-speech synthesis without playing audio; this may call a provider.")
+    preflight = sub.add_parser("preflight", help="Check stage isolation of the current Hermes home",
+                               description="Check stage isolation in the current Hermes home before arming.")
+    preflight.add_argument("--json", action="store_true", help="Print results as JSON")
+    rehearse = sub.add_parser("rehearse", help="Synthetic offline rehearsal: no Twitch, model, TTS or network",
+                              description="Run a synthetic offline rehearsal with canned chat and replies.")
     rehearse.add_argument("--duration", type=float, default=30.0,
                           help="Upper bound in seconds (1-300, default 30)")
-    sub.add_parser("status", help="Read the local desk state")
-    host = sub.add_parser("host", help="Queue a host line on the current stage")
-    host.add_argument("text")
-    line = sub.add_parser("check-line", help="Check one line with the output guard")
-    line.add_argument("line", nargs="?")
-    line.add_argument("--never-say", action="append", default=[])
-    line.add_argument("--host-name", default="Host")
-    line.add_argument("--protected-name", action="append", default=[])
-    line.add_argument("--armed", action="store_true")
-    line.add_argument("--profanity", choices=("allow", "mask", "block"), default="mask")
-    line.add_argument("--chat", action="append", default=[], help="Classify viewer chat with the inbound gate")
-    report = sub.add_parser("report", help="Print recorded show receipts from disk")
-    report.add_argument("--show", nargs="?", const="latest", help="Summarize a session, or the latest show")
+    sub.add_parser("status", help="Read the local desk state", description="Read the stage desk state in the current Hermes home.")
+    host = sub.add_parser("host", help="Queue a host line on the current stage",
+                          description="Queue a host line on the stage in the current Hermes home.")
+    host.add_argument("text", help="Host line to queue")
+    line = sub.add_parser("check-line", help="Check one line with the output guard",
+                          description="Check co-host output, or classify viewer chat with --chat.")
+    line.add_argument("line", nargs="?", help="Co-host output to check")
+    line.add_argument("--never-say", action="append", default=[], help="Withhold this phrase (repeatable)")
+    line.add_argument("--host-name", default="Host", help="Protected host name (default: Host)")
+    line.add_argument("--protected-name", action="append", default=[], help="Additional protected name (repeatable)")
+    line.add_argument("--armed", action="store_true", help="Apply the armed output guard")
+    line.add_argument("--profanity", choices=("allow", "mask", "block"), default="mask", help="Profanity policy (default: mask)")
+    line.add_argument("--chat", action="append", default=[], help="Classify viewer chat with the inbound gate; only the last value is used")
+    report = sub.add_parser("report", help="Summarize a show from recorded receipts",
+                            description="Summarize the latest show or a named session from receipts in the current home.")
+    report.add_argument("--show", nargs="?", const="latest", help="Session ID to summarize; omit the value for the latest show")
 
 
 def _home() -> Path:
@@ -330,7 +338,8 @@ def _status() -> None:
         finally:
             conn.close()
     except (OSError, ValueError, KeyError, TypeError, http.client.HTTPException):
-        _fail("On Air status unavailable: control discovery or loopback request failed.")
+        _fail("On Air status unavailable: control discovery or loopback request failed. "
+              "Check that the stage is running and HERMES_HOME selects its home.")
     print(json.dumps(state, ensure_ascii=False, indent=2))
 
 

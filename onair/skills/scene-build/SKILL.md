@@ -66,3 +66,7 @@ size and 480×270, then check privacy, off air, live, alert, each intended shot,
 - CSP error: use no remote or inline script; keep modules local to the scene.
 - Mouth stuck: check whether the fail-closed `events.js` wiring was changed; test clear, Stop and
   disconnect, not just captions.
+
+## Hard rules
+
+Never go live, arm, approve a line, lift privacy or unmute on your own.

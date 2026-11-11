@@ -1,5 +1,7 @@
 # Produce a show with On Air
 
+Use this guide to prepare and operate a show with your owner agent.
+
 You describe the show; your own Hermes agent produces it with the On Air tools and the `on-air:produce`
 skill. You keep the decisions that are yours: approvals, which window to share, going live, and your own
 model and OBS settings. For example, in your local Hermes:

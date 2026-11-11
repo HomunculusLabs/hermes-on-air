@@ -91,7 +91,7 @@ def test_window_refusals_describe_actual_cause(obs):
     assert call(ctx, 'onair_obs_setup', {'action': 'configure'})['ok']
     obs.kinds = ['browser_source']
     out = box_call(ctx, 'set', main='slides', sub1='window', sub2='empty', arrangement='stack')
-    assert not out['ok'] and 'xcomposite_input' in out['next_human_action'] and 'PipeWire' in out['next_human_action']
+    assert not out['ok'] and 'supported' in out['next_human_action'] and 'xcomposite_input' in out['next_human_action']
     obs.kinds = ['browser_source', 'pipewire-screen-capture-source']
     assert call(ctx, 'onair_window_share', {'action': 'prepare'})['ok']
     out = box_call(ctx, 'set', main='slides', sub1='window', sub2='empty', arrangement='stack')
@@ -102,6 +102,7 @@ def test_window_refusals_describe_actual_cause(obs):
     out = box_call(ctx, 'set', main='slides', sub1='window', sub2='empty', arrangement='stack')
     assert not out['ok'] and 'confirm-window' in out['next_human_action']
     obs.platform = 'other'
+    obs.kinds = ['browser_source']
     obs.inputs.pop(cfg.window_input)
     out = box_call(ctx, 'set', main='slides', sub1='window', sub2='empty', arrangement='stack')
     assert not out['ok'] and 'xcomposite_input' in out['next_human_action']

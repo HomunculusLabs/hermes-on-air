@@ -37,6 +37,29 @@ from .obs_protocol import Client, ObsAuthError, ObsError, ObsRequestError
 from . import ownership
 
 BROWSER_KIND = "browser_source"
+LINUX_CAPTURE_KINDS = {"pipewire-screen-capture-source", "pipewire-window-capture-source",
+                       "pipewire-desktop-capture-source", "xcomposite_input", "xshm_input",
+                       "xshm_input_v2", "v4l2_input", "pulse_input_capture"}
+
+
+def _normalise_platform(reported: Any, kinds: set) -> str:
+    if reported == "windows":
+        return "windows"
+    if reported in ("macos", "osx", "darwin"):
+        return "macos"
+    if isinstance(reported, str) and reported and LINUX_CAPTURE_KINDS.intersection(kinds):
+        return "linux"
+    return "unknown"
+
+
+async def _obs_platform(c, version: dict | None = None) -> tuple:
+    version = version if version is not None else await c.request("GetVersion")
+    reported = version.get("platform")
+    try:
+        kinds = set((await c.request("GetInputKindList", {"unversioned": True})).get("inputKinds", []))
+    except ObsRequestError:
+        kinds = set()
+    return _normalise_platform(reported, kinds), reported, kinds
 
 # Window-only capture kinds by OBS platform, verified against obs-studio 7a25c3fd8b5eb87c2d2e0606cae36e32014bc6fa
 # (plugins/win-capture/window-capture.c, plugins/mac-capture/mac-sck-video-capture.m,
@@ -423,15 +446,16 @@ class ObsControl:
     async def inspect(self) -> dict:
         async def op(c):
             v = await c.request("GetVersion")
+            platform, reported, _ = await _obs_platform(c, v)
             inputs = await self._inputs(c)
             scenes = await self._scenes(c)
             src = await self._sources(c, inputs)
             out = {"ok": True, "obs": {"obs_version": v.get("obsVersion"), "websocket_version": v.get("obsWebSocketVersion"),
-                                       "platform": v.get("platform")},
+                                       "platform": platform, "platform_reported": reported},
                    "program_scene": await self._program(c), "approved_scenes": self.cfg.approved_scenes,
                    "scenes_present": {s: s in scenes for s in self.cfg.approved_scenes},
                    "sources": src, "stream": await self._stream(c)}
-            out["startup_bootstrap_required"] = v.get("platform") == "macos" and BROWSER_KIND not in inputs.values()
+            out["startup_bootstrap_required"] = platform == "macos" and BROWSER_KIND not in inputs.values()
             out["presentation_ready"] = bool(all(out["scenes_present"][s] for s in self.cfg.owned_scenes[:1])
                                              and src["presentation"].get("url_matches") and src["speech_audio"]["ok"]
                                              and src["speech_audio"]["presentation_audio_off"])
@@ -451,7 +475,7 @@ class ObsControl:
             return {"ok": False, "configured": False, "error": "The 3D scene names collide with another configured scene or input; nothing was changed."}
 
         async def op(c):
-            platform = (await c.request("GetVersion")).get("platform", "")
+            platform, reported, _ = await _obs_platform(c)
             inputs = await self._inputs(c)
             existing_sources = await self._sources(c, inputs)
             conflicts = existing_sources['speech_audio']['extra_overlay_clients']
@@ -470,6 +494,7 @@ class ObsControl:
                             'next_human_action': _unowned_overlay_message(cfg.overlay_input)}
             if platform == "macos" and BROWSER_KIND not in inputs.values():
                 return {"ok": False, "configured": False, "bootstrap_required": True, "platform": platform,
+                        "platform_reported": reported,
                         "why": BOOTSTRAP_WHY, "next_agent_action": "onair_obs_setup action 'prepare_startup'",
                         "error": "OBS needs a startup collection first (macOS); nothing was created."}
             scenes = await self._scenes(c)
@@ -539,7 +564,8 @@ class ObsControl:
                             and len(names) == 2 and names == [cfg.scene_view_input, cfg.overlay_input])
                 sources_ok = sources_ok and scene_ok
             ok = sources_ok and fit["fitted"] is True
-            out = {"ok": ok, "configured": ok, "sources_configured": sources_ok, "platform": platform, "sources": src,
+            out = {"ok": ok, "configured": ok, "sources_configured": sources_ok, "platform": platform,
+                   "platform_reported": reported, "sources": src,
                    "canvas": fit["canvas"], "fit": fit, "program_scene": await self._program(c),
                    "render": {"verified": False, "note": RENDER_NOTE},
                    "note": "Configured the owned Browser Sources; the program scene and outputs were not changed."}
@@ -776,11 +802,7 @@ class ObsControl:
 
     async def _window_state(self, c) -> dict:
         cfg = self.cfg
-        platform = (await c.request("GetVersion")).get("platform", "")
-        try:
-            kinds = set((await c.request("GetInputKindList", {"unversioned": True})).get("inputKinds", []))
-        except ObsRequestError:
-            kinds = set()
+        platform, reported, kinds = await _obs_platform(c)
         # Only kinds OBS both lists and lets a client create count as available for 'prepare'.
         available = [k["kind"] for k in WINDOW_KINDS.get(platform, []) if k["kind"] in kinds]
         combined_creatable = platform == "linux" and COMBINED_PIPEWIRE_KIND in kinds and not available
@@ -788,7 +810,7 @@ class ObsControl:
         inputs = await self._inputs(c)
         kind = inputs.get(cfg.window_input)
         out: dict[str, Any] = {"label": "Shared window (OS window capture, chosen by you in OBS)", "share": "os_window",
-                               "platform": platform, "window_kinds_available": available,
+                               "platform": platform, "platform_reported": reported, "window_kinds_available": available,
                                "can_create_input": creatable is not None, "creatable_kind": creatable,
                                "input": cfg.window_input, "exists": kind is not None, "kind": kind,
                                "legacy_input": False, "selection": None, "capture_type_verified": None,
@@ -806,6 +828,9 @@ class ObsControl:
                 out["prerequisites"].append("Use action 'prepare' to create the owned window-capture input.")
             elif combined_creatable:
                 out["prerequisites"].append(NO_WINDOW_ONLY_KIND_WAYLAND)
+                out["next_human_action"] = ("Ask the agent to prepare the window share, then select one window in the "
+                                            "system dialog, check the OBS preview, and confirm with "
+                                            f"{CONFIRM_COMMAND} in your own Hermes.")
             else:
                 out["prerequisites"].append(self._no_kind_reason(platform, kinds))
             return out

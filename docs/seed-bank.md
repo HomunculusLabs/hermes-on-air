@@ -1,5 +1,7 @@
 # Seed-bank rundown
 
+Use this guide to prepare and check a public rundown for quiet moments.
+
 A seed bank is an owner-approved YAML or JSON file of short talking points for quiet
 moments. The stage offers one beat when the dead-air timer expires, after higher-priority
 chat and support turns. Offering a beat consumes it even if a generated response is

@@ -1,5 +1,7 @@
 # OBS overlay
 
+Use this guide to add the captions and voice overlay to OBS.
+
 For an optional owner-built 3D room and character on a separate Browser Source, see [3D scene](scene.md).
 The scene does not play sound; the overlay below remains the source of captions and voice.
 

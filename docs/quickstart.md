@@ -1,5 +1,7 @@
 # Quickstart: a private rehearsal
 
+Use this guide to install On Air and run your first private rehearsal.
+
 You need Hermes 0.22.7 or newer using its Python 3.14 runtime, a configured model for a real
 private show, and OBS if you want to preview the composition. See [compatibility](compatibility.md).
 

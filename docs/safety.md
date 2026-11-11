@@ -1,5 +1,7 @@
 # Safety and its limits
 
+Use this guide to understand the safety controls and their limits before a show.
+
 On Air separates the owner's agent from a public stage home. It checks stage requests for tools
 and memory context and guards generated lines before caption and speech output. Approval mode
 holds co-host lines for owner review; autonomous mode releases guarded lines without that review.

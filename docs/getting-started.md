@@ -1,5 +1,7 @@
 # Getting started with On Air
 
+Use this guide to rehearse offline and set up a separate stage manually.
+
 Nothing here contacts Twitch, a model provider or a TTS service until you configure them
 yourself, and nothing arms a show for you. Installing the plugin and preparing Hermes dependencies
 may use the network.

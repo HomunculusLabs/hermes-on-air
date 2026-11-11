@@ -98,6 +98,8 @@ def test_existing_metadata_report_only():
                                                              {"tools": 0, "actions": 0, "examples": 0})}
     print("Existing skill metadata:", json.dumps(report, sort_keys=True))
     assert set(report) == set(OLD)
+    assert all(item["format"] and item["length"] <= 60 and not item["schema_problems"]
+               for item in report.values())
 
 
 def test_registered_skills_not_in_stage_but_messaging_tools_refuse(tmp_path, monkeypatch):
@@ -195,6 +197,12 @@ def test_stable_skill_calls_against_registered_contracts(owner):
     assert commands_seen >= 6 and cli_seen >= 2
     wrong = '`onair_not_real`\n`onair_layout` `undo`\nonair_layout {"action":"apply","preset":"bogus"}'
     assert len(_produce._problems(wrong, schemas, toolsets, {"tools": 0, "actions": 0, "examples": 0})) == 3
+
+
+@pytest.mark.parametrize("name", OLD + NEW)
+def test_all_skills_reserve_owner_decisions(name):
+    text = (PACK / name / "SKILL.md").read_text().lower()
+    assert "never go live, arm, approve a line, lift privacy or unmute on your own" in text
 
 
 @pytest.mark.parametrize("name", NEW)

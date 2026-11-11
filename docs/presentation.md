@@ -1,5 +1,7 @@
 # Presentation, shared window and broadcast (private agent)
 
+Use this reference to prepare slides, OBS views and broadcast controls.
+
 `onair.presentation` lets your own private Hermes agent put its work on stream and run OBS output:
 
 - a **presentation surface**: a public web page the agent fills with a small plain-text deck (title, bullets,
@@ -197,6 +199,7 @@ Extra overlay sources are listed so you can remove them; the agent does not mute
    - **macOS**: kind `screen_capture` with Method *Window Capture* (or the legacy `window_capture`). OBS needs
      Screen Recording permission (System Settings → Privacy & Security → Screen & System Audio Recording).
    - **Linux, OBS running on X11**: kind `xcomposite_input`; pick the window in the input's properties.
+     Flatpak and distribution builds of OBS are recognised when Linux capture kinds are reported.
    - **Linux, OBS running on Wayland: operator-selected capture, owner-confirmed.** Current OBS has no
      window-only kind there: `xcomposite_input` is not registered on Wayland and the window-only PipeWire kind
      is obsolete. It lists and creates only the combined PipeWire kind `pipewire-screen-capture-source`, whose

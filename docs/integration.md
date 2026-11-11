@@ -1,5 +1,7 @@
 # Integrated private agent show (setup/show + presentation/OBS output)
 
+Use this reference to understand the owner and stage integration boundaries.
+
 The plugin's single registration (`onair/adapter.py: register`) wires both slices for an owner home and
 nothing for an On Air stage home:
 

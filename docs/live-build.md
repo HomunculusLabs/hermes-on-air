@@ -1,5 +1,7 @@
 # Build live on stream
 
+Use this guide to build in public steps with selected text and your own narration.
+
 In your local owner agent, say: **“Build a banana phone synth live.”** If you do not name a
 folder, the agent proposes a new project subfolder of the current working directory for you to
 confirm or replace. The agent shows selected public code, real test output and a short step rail

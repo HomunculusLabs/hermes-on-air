@@ -52,9 +52,11 @@ class FakeObs:
     def __init__(self, platform="linux", password=None, kinds=None, session=None):
         self.platform = platform
         self.password = password
-        if session is None and platform == "linux":
+        family = "linux" if platform in ("linux", "org.freedesktop.platform", "ubuntu") else (
+            "macos" if platform in ("osx", "darwin") else platform)
+        if session is None and family == "linux":
             session = "wayland"
-        self.kinds = kinds if kinds is not None else DEFAULT_KINDS[(platform, session)]
+        self.kinds = kinds if kinds is not None else DEFAULT_KINDS[(family, session)]
         assert not OBSOLETE_KINDS & set(self.kinds), "upstream never lists obsolete kinds"
         self.scenes = {"Scene": []}
         self.scene_uuids = {"Scene": str(uuid.uuid4())}

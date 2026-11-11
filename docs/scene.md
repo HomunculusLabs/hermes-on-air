@@ -1,5 +1,7 @@
 # Optional owner 3D scene
 
+Use this guide to create and preview an optional owner-controlled 3D scene.
+
 On Air's overlay has no built-in avatar and the plugin supplies no camera, guest video or host
 video. An optional, **owner-controlled** three.js scene adds a code-built room and character as a
 separate OBS Browser Source. It is not face tracking, avatar generation or a video-call feature.

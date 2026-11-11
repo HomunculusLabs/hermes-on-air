@@ -1,5 +1,7 @@
 # Streaming setup
 
+Use this guide to prepare a separate stage and OBS before going live.
+
 ```text
 Twitch chat -> separate stage -> guard -> approval or release -> captions / voice overlay
                                               |                         |

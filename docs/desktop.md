@@ -1,5 +1,7 @@
 # On Air in Hermes Desktop
 
+Use this guide to operate On Air from the Hermes Desktop interface.
+
 The same installable On Air package includes `desktop/plugin.js`. When enabled, it contributes an **On Air** sidebar entry, a full workspace page and a compact right pane. They share one owner and use the existing authenticated dashboard backend through the Desktop SDK; there is no second show controller. The browser dashboard is unchanged. The backend discovers only a show in its own profile: an owner's backend does not discover a separate real stage started in the stage profile. Use a backend running in the stage profile for stage controls; Views mutations require the owner profile and retain the limitations in [Views](views.md).
 
 ## Enable

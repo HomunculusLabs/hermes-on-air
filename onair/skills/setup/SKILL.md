@@ -134,3 +134,7 @@ the packet is applied or the page renders because a file was written or `configu
 you have no approved way to do this on the OBS machine, tell the user that one prerequisite instead of a
 setup walkthrough. If `startup_packet` says `stale` or `drift`, do not apply it: run `prepare_startup` again
 (a `drift` packet must be removed deliberately first). `render.verified` stays false; check `pages_connected` and the OBS preview.
+
+## Hard rules
+
+Never go live, arm, approve a line, lift privacy or unmute on your own.

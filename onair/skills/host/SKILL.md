@@ -24,8 +24,8 @@ description: Use when talking to the co-host. Send a host line.
    Wear headphones: speech during an airing line can request a cut. Privacy, Stop, off air,
    stage loss or restart and the documented timeout/refusal conditions close capture.
 3. The co-host reply follows guard and approval rules. Queued means accepted for later, not aired.
-   A stage that is off air, paused or private refuses host turns. After a cut, re-enter words;
-   do not send a buffered transcript under a new epoch. The owner can type `/onair-stage cut`.
+   A stage that is off air, paused or private refuses host turns. After a cut, queued owner-typed and desk-microphone lines carry over; relayed lines are dropped.
+   Re-record a discarded capture rather than sending a buffered transcript under a new epoch. The owner can type `/onair-stage cut`.
    `onair_stage_control` `cut_in` is a safe-direction action; `pending` inspects waiting lines.
    On the dashboard's On Air page, Talk offers Cut in and hold-to-talk. `host_cut_in_on_talk`
    defaults on and cuts an airing line before that same press starts recording; if refused, no

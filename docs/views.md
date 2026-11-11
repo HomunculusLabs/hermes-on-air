@@ -1,5 +1,7 @@
 # Views and boxes
 
+Use this guide to arrange the OBS boxes and share a window.
+
 Views arranges **three boxes** in the owned `On Air: Boxes` OBS scene: Main, Sub 1 and Sub 2.
 A box can contain the optional 3D **Scene**, **Slides** (including the [work view](work-share.md)), or one owner-selected **Window**;
 either sub can also be **Empty**. Main cannot be empty. Each source appears at most once: putting

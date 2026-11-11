@@ -45,3 +45,7 @@ description: Use when adding a VRM avatar. Verify it locally.
    of its own; only the existing overlay plays voice. Tune `voiceOffsetMs` (default 0, positive
    delays, range -2000 to 2000 ms) on a real private show. Check framing and streaming rights with
    the owner before use. See docs/scene.md.
+
+## Hard rules
+
+Never go live, arm, approve a line, lift privacy or unmute on your own.

@@ -1,5 +1,7 @@
 # Agent-first setup, customization and private preview
 
+Use this guide to prepare a private preview, show and separate stage with your owner agent.
+
 On Air is operated by your own private Hermes agent. You say what you want; the agent does the
 work through the plugin's own tools, and you approve the exact plan. The dashboard's **Start here**
 tab shows the same plan and state and is optional.

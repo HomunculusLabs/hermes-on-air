@@ -1,5 +1,7 @@
 # Host turns on the real stage
 
+Use this guide to send host lines and understand their priority.
+
 A host turn is a line from the show host to the on-stream co-host, separate from Twitch chat. A
 line typed at the desk or sent from its microphone takes priority over waiting chat and unapproved
 quiet-beat drafts, which are withdrawn. It waits for a current model turn; in approval mode it can

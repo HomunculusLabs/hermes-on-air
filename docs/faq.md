@@ -1,5 +1,7 @@
 # Frequently asked questions
 
+Use these answers to understand common On Air questions and limitations.
+
 ## Does this post to Twitch chat?
 
 No. The stage reads chat anonymously and read-only. Captions and optional speech go to the

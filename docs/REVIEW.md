@@ -1,5 +1,7 @@
 # Review guide
 
+Use this guide as a contributor or reviewer to check changes before merging.
+
 Every pull request into `main` gets one independent code review before it merges. The author
 never reviews their own PR. The reviewer posts one review per head commit with one of three verdicts:
 

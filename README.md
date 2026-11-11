@@ -1,66 +1,51 @@
 # On Air
 
-On Air is a Hermes plugin for an AI co-host on a live stream. It reads Twitch chat and guards
-co-host replies before captions and optional voice. Your agent can help prepare OBS and a private
-rehearsal while you keep the decisions to arm the show and go live.
+On Air is a Hermes plugin that adds a guarded AI co-host to your stream.
 
 ![A stylized mascot in a room with a co-host caption along the bottom](docs/img/private-show-captions.png)
 
 *A synthetic private practice scene showing the mascot and a caption at 1280×720.*
 
-![The optional code-built mascot in its starter room](docs/img/scene.png)
+## What you get
 
-*The optional [owner 3D scene](docs/scene.md), shown in a synthetic preview.*
+- Guarded co-host replies with captions, optional voice and owner approval.
+- A Live desk for reviewing replies, privacy, mute and Stop.
+- Optional hands-free open mic to send your speech to the co-host without transcript review.
+- Your typed and desk-microphone host lines take priority over unapproved filler and survive a cut-in; other safety cuts discard them.
+- OBS Main and Sub box layouts by plain-language request, with window selection left to you.
+- A text-only work view and a live-build skill for sharing selected code and tests with your own narration.
+- An explained pause and a standby card when the stage pauses.
 
-## Features
+## Quick start: private rehearsal
 
-- Anonymous, read-only Twitch chat; guarded replies with optional owner approval.
-- Captions and optional voice, privacy and mute controls, and a rundown for quiet moments.
-- OBS slides, shared window and three-box views, plus an optional owner-built 3D scene or VRM.
-- [Work view](docs/work-share.md): publish selected code and test output to the existing slides source.
-- [Live build](docs/live-build.md): have your agent build in small public steps, with owner-provided narration lines.
-- [Talk to your co-host](docs/talk.md): type, hold to talk, review and cut in; plus a private, model-backed rehearsal.
+1. Install Hermes 0.22.7 or newer with its Python 3.14 runtime. Install and enable On Air:
 
-## Quick start: let your agent run it
+   ```bash
+   hermes plugins install https://github.com/HomunculusLabs/hermes-on-air --enable
+   ```
 
-Install Hermes Agent and configure a model provider with `hermes setup` in an interactive terminal,
-then install and enable On Air in your own Hermes home:
+2. Run the synthetic offline rehearsal. It uses canned chat and replies, not a model, Twitch or voice:
 
-```bash
-hermes plugins install https://github.com/HomunculusLabs/hermes-on-air --enable
-# Optional, synthetic offline check; no Twitch, model, TTS or network:
-hermes onair rehearse
-```
+   ```bash
+   hermes onair rehearse
+   ```
 
-In your own local Hermes agent, say for example:
+3. For a model-backed private show, configure your owner model in an interactive terminal and start a new local Hermes session:
 
-> Set up On Air for my channel cozy_fox. Keep the co-host relaxed and reply less often.
-> Make a show about sketching, with my drawing window and slides in a corner. Practise
-> privately first, and let me approve each reply.
+   ```bash
+   hermes setup
+   hermes
+   ```
 
-1. The agent checks `onair_setup_status` and asks only for missing choices. It uses
-   `on-air:setup` and `on-air:produce` for the supported workflow.
-2. It shows the effects and approval code from `onair_setup_plan`. You type the returned
-   `/onair-setup approve <code>` and confirm **Set up & preview** on the card. The dashboard
-   offers a setup approval too.
-3. Review the private preview's test message and suggested reply; choose Show or Skip. The
-   preview may use a canned reply or, with your choice, your configured model.
-4. For a private show, the agent plans with `onair_show_plan`; you type the returned
-   `/onair-setup show approve <code>` and confirm the card. It uses a real model and serves
-   captions on loopback; it also speaks when your Hermes text-to-speech is available, unless you
-   ask for captions only. Private typed chat is not Twitch chat.
-5. The agent can publish slides, prepare supported OBS looks and read back settings. You choose
-   any shared window and check the OBS preview and audio. A readback is not a pixels or sound test.
-6. After you install the plugin and configure a model in the stage home, the agent can plan the
-   real stage with `onair_stage_plan`. You type `/onair-setup stage approve <code>` and confirm
-   its card. The stage starts off air. Arming it and going live remain your decisions.
+4. Ask your agent: “Set up On Air for example_channel. Rehearse privately with captions and let me approve each reply.” Give it your public show topic and co-host style. Keep credentials out of chat.
+5. Review the setup plan, type its returned approval command yourself and confirm the card. Review the private preview.
+6. Ask for a private show. Review its plan, type its returned approval command and confirm the card. Show or skip replies, then end the show. It uses your owner model and private typed chat, not Twitch.
 
-Owner tools answer only in your own local Hermes (CLI, TUI or desktop). They refuse messaging
-platforms and the public stage; a messaging chat cannot establish owner identity. The dashboard
-is an alternative for supported controls. To control the separate real stage in the desk, the
-browser dashboard or Desktop backend must run in that stage's profile; an owner's dashboard
-cannot discover it. Views have separate owner-profile limitations; see [Views](docs/views.md).
-Never paste keys or passwords into chat.
+See [Quickstart](docs/quickstart.md) for the full private-show steps, [Streaming setup](docs/streaming-setup.md) before going live, and [Safety](docs/safety.md) for the safety model.
+
+## Limits
+
+The work view accepts text only, not images or arbitrary URLs. Live-build narration is not automatic: you supply the lines. Voice latency is measured in seconds, not real time. The Live desk controls the real stage only when the dashboard backend runs in the stage profile. Window sharing depends on your platform and OBS. Synthetic rehearsal does not test your model, voice, Twitch connection or readiness to go live.
 
 ## What your agent gets
 
@@ -76,7 +61,7 @@ The first 15 tools belong to `onair_setup`; the other 9 belong to `onair_present
 explicit tool list hides them, enable the relevant toolsets with `hermes tools`. The packaged
 skills are listed below. The owner slash commands include `/onair-setup`, `/onair-stage`, `/onair-present` and
 `/onair-broadcast`. The CLI has `hermes onair setup`, `scene`, `preflight`, `rehearse`, `status`,
-`host`, `check-line` and `report`. The CLI's manual setup path is documented separately.
+`host`, `check-line`, `voice-test` and `report`. The CLI's manual setup path is documented separately.
 
 ## Skills pack
 

@@ -1,5 +1,7 @@
 # Semantic assistance: measured Laya results
 
+Use this reference to interpret the scope and results of semantic assistance evaluation.
+
 What was measured, on what, and what it means for the shadow approval adapter
 (`onair/assist.py`). Nothing here promotes Laya to release authority: it stays **off by default
 and shadow-only** when enabled.

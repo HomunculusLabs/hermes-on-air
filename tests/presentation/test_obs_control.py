@@ -212,6 +212,80 @@ def test_linux_wayland_obsolete_window_kind_not_advertised_or_creatable(obs):
     assert "onair_present_publish" in text and "xcomposite_input" in text
 
 
+@pytest.mark.parametrize("platform", ["org.freedesktop.platform", "ubuntu"])
+def test_distro_wayland_discover_prepare_owner_confirmation(platform):
+    fake = FakeObs(platform=platform, kinds=[
+        "image_source", "color_source", "slideshow", "jack_output_capture", "pipewire-camera-source",
+        "pipewire-screen-capture-source", "pulse_input_capture", "pulse_output_capture", "v4l2_input",
+        "browser_source", "ffmpeg_source", "text_ft2_source",
+    ]).start()
+    try:
+        ctx = served(fake)
+        before = len(fake.requests("CreateInput"))
+        result = call(ctx, "onair_window_share", {"action": "discover"})
+        print("DISCOVER_JSON=" + json.dumps(result, sort_keys=True))
+        w = result["window"]
+        assert w["platform"] == "linux" and w["platform_reported"] == platform
+        assert w["creatable_kind"] == "pipewire-screen-capture-source" and w["can_create_input"]
+        assert w["next_human_action"] and len(fake.requests("CreateInput")) == before
+        assert call(ctx, "onair_window_share", {"action": "prepare"})["ok"]
+        fake.frames[C.window_input] = (1280, 720)
+        fake.inputs[C.window_input]["settings"]["RestoreToken"] = "chosen"
+        w = call(ctx, "onair_window_share", {"action": "discover"})["window"]
+        assert not w["ready"] and not w["capture_type_verified"]
+        assert not call(ctx, "onair_window_share", {"action": "show"})["ok"]
+        ctx.choice = "confirm"
+        assert ctx.commands["onair-broadcast"]("confirm-window").startswith("Confirmed")
+        w = call(ctx, "onair_window_share", {"action": "discover"})["window"]
+        assert w["ready"] and w["operator_confirmed"] and not w["capture_type_verified"]
+        assert call(ctx, "onair_window_share", {"action": "show"})["ok"]
+    finally:
+        fake.stop()
+
+
+@pytest.mark.parametrize("platform", ["other", "", None])
+def test_unknown_platform_without_linux_kinds_is_unsupported(platform):
+    fake = FakeObs(platform=platform, kinds=["browser_source", "image_source"]).start()
+    try:
+        ctx = served(fake)
+        w = call(ctx, "onair_window_share", {"action": "discover"})["window"]
+        assert w["platform"] == "unknown" and w["platform_reported"] == platform
+        assert not w["can_create_input"] and w["creatable_kind"] is None
+        assert "No capture kind is supported" in w["prerequisites"][0]
+    finally:
+        fake.stop()
+
+
+@pytest.mark.parametrize("platform", ["osx", "darwin"])
+def test_macos_platform_aliases(platform):
+    fake = FakeObs(platform=platform).start()
+    try:
+        ctx = served(fake)
+        w = call(ctx, "onair_window_share", {"action": "discover"})["window"]
+        assert w["platform"] == "macos" and w["platform_reported"] == platform
+        assert w["creatable_kind"] == "screen_capture"
+        inspect = call(ctx, "onair_obs_setup", {"action": "inspect"})
+        assert inspect["obs"]["platform"] == "macos" and inspect["obs"]["platform_reported"] == platform
+        assert inspect["startup_bootstrap_required"]
+        setup = call(ctx, "onair_obs_setup", {"action": "configure"})
+        assert setup["bootstrap_required"] and setup["platform"] == "macos"
+        assert setup["platform_reported"] == platform and not fake.requests("CreateInput")
+    finally:
+        fake.stop()
+
+
+@pytest.mark.parametrize("kind", ["pipewire-screen-capture-source", "pipewire-window-capture-source",
+                                  "pipewire-desktop-capture-source", "xcomposite_input", "xshm_input",
+                                  "xshm_input_v2", "v4l2_input", "pulse_input_capture"])
+def test_normalise_platform_linux_evidence(kind):
+    from onair.presentation.obs_control import _normalise_platform
+    assert _normalise_platform("distribution", {kind}) == "linux"
+    assert _normalise_platform("", {kind}) == "unknown"
+    assert _normalise_platform(None, {kind}) == "unknown"
+    assert _normalise_platform("windows", {kind}) == "windows"
+    assert _normalise_platform("darwin", {kind}) == "macos"
+
+
 def test_linux_without_any_capture_kind_never_suggests_prepare():
     fake = FakeObs(kinds=["browser_source", "image_source"]).start()
     try:

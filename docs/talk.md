@@ -1,5 +1,7 @@
 # Talk to your co-host
 
+Use this guide to send host lines, use the microphone and cut in safely.
+
 On Air can take a typed host line, a short microphone clip, or a line relayed by your own
 agent. The co-host's answer follows the normal guard, optional approval, privacy and mute
 controls. **Queued** means accepted for later, not necessarily published or heard.
