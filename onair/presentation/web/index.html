@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1920, height=1080">
+  <title>On Air presentation</title>
+  <link rel="stylesheet" href="/present/present.css">
+  <script src="/present/app.js" defer></script>
+</head>
+<body>
+  <main id="stage" data-mode="connecting" aria-live="polite">
+    <section id="slide" hidden>
+      <h1 id="heading"></h1>
+      <p id="subtitle" hidden></p>
+      <ul id="bullets" hidden></ul>
+      <p id="body" hidden></p>
+      <figure id="code-wrap" hidden><figcaption id="language"></figcaption><pre><code id="code"></code></pre></figure>
+    </section>
+    <section id="standby">
+      <h1 id="standby-title">Starting soon</h1>
+      <p id="standby-note"></p>
+    </section>
+    <footer id="footer"><span id="deck-title"></span><span id="counter"></span></footer>
+  </main>
+</body>
+</html>

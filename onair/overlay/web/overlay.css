@@ -1,0 +1,54 @@
+/* Override these custom properties in OBS Custom CSS to position and style the overlay:
+   --scale, --font, --ink, --outline, --accent, --chat-backdrop,
+   --caption-size, --caption-bottom, --caption-width, --caption-x,
+   --chat-size, --chat-width, --chat-height, --chat-bottom, --chat-left, --chat-right, --chat-align,
+   --live-top, --live-left. Set --chat-left and --chat-right to swap sides. */
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+body {
+  font-family: var(--font, system-ui, -apple-system, "Segoe UI", sans-serif);
+  font-size: calc(16px * var(--scale, 1)); color: var(--ink, #fff);
+}
+body[data-theme="light"] { --ink: #20232b; --accent: #784200; --chat-backdrop: rgba(255,255,255,.90); }
+[hidden] { display: none !important; }
+#stage { position: absolute; inset: 0; }
+body:not(.live) #stage { display: none; }
+#live { position: absolute; top: var(--live-top, 30px); left: var(--live-left, 30px); display: flex; align-items: center; gap: .5em; font-size: calc(16px * var(--scale, 1)); color: #fff; font-weight: 600; letter-spacing: .08em; -webkit-text-stroke: 1px #151515; paint-order: stroke fill; text-shadow: 0 2px 4px #000; }
+body:not([data-status="on"]) #live { display: none; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: #b6c2b7; box-shadow: 0 0 0 1px #222; }
+#chat { position: absolute; right: var(--chat-right, 64px); left: var(--chat-left, auto); bottom: var(--chat-bottom, 13em); width: var(--chat-width, min(25em, 42vw)); max-height: var(--chat-height, 55%); box-sizing: border-box; margin: 0; padding: 16px; list-style: none; display: flex; flex-direction: column; justify-content: end; gap: .5em; font-size: var(--chat-size, calc(25px * var(--scale, 1))); }
+#chat { align-items: var(--chat-align, flex-end); }
+#chat li { flex: none; box-sizing: border-box; width: fit-content; max-width: 100%; line-height: 1.3; overflow-wrap: anywhere; color: #fff; background: var(--chat-backdrop, rgba(0,0,0,.62)); border-radius: 12px; padding: 10px 14px; box-shadow: 0 0 3px 1px rgba(0,0,0,.2); -webkit-text-stroke: 1px #111; paint-order: stroke fill; text-shadow: 0 2px 4px #000; animation: chat-in .25s ease both; }
+body[data-theme="light"] #chat li { color: #141414; border: 1px solid rgba(0,0,0,.12); box-shadow: 0 0 3px 1px rgba(255,255,255,.3); -webkit-text-stroke: 0; text-shadow: none; }
+#chat li:nth-last-child(5) { opacity: .98; }
+#chat li:nth-last-child(4) { opacity: .99; }
+#chat b { color: var(--accent, #ffe0a1); font-weight: 600; margin-right: .3em; }
+@keyframes chat-in { from { transform: translateY(.4em); } to { transform: none; } }
+#caption { position: absolute; bottom: var(--caption-bottom, 1em); left: var(--caption-x, 50%); transform: translateX(-50%); width: var(--caption-width, 80%); box-sizing: border-box; max-width: 1400px; padding: .16em .3em .22em; border-radius: .3em; background: rgba(10,12,16,.78); font-size: var(--caption-size, 3em); font-weight: 750; line-height: 1.2; text-align: center; overflow-wrap: anywhere; color: #fff; -webkit-text-stroke: 4px #111; paint-order: stroke fill; text-shadow: 0 2px 4px #000; animation: caption-in .3s ease both; }
+body[data-theme="light"] #caption { -webkit-text-stroke-width: 3px; }
+#caption.fading { animation: caption-out .4s ease both; }
+@keyframes caption-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes caption-out { from { opacity: 1; } to { opacity: 0; } }
+#caption-text { text-wrap: balance; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; }
+#speaker { display: block; margin-bottom: 7px; color: var(--accent, #ffe0a1); font-size: calc(19px * var(--scale, 1)); -webkit-text-stroke: 2px #111; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; }
+body[data-theme="light"] #speaker { color: #ffe0a1; }
+#speaker:empty { display: none; }
+#audio-unlock { background: rgba(0,0,0,.9); color: #fff; }
+#alert { position: absolute; top: 1.5em; left: 50%; transform: translateX(-50%); display: flex; align-items: baseline; gap: .3em; box-sizing: border-box; max-width: min(900px, 90%); padding: .65em 1em; border-radius: .65em; border: 1px solid rgba(255,224,161,.45); background: rgba(12,12,14,.9); color: #eee; font-size: calc(27px * var(--scale, 1)); font-weight: 400; white-space: nowrap; animation: alert-in .25s ease both; }
+#alert .alert-name { color: #ffe0a1; font-weight: 600; max-width: 55%; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+body[data-theme="light"] #alert { background: rgba(255,255,255,.92); color: #202020; border-color: #784200; }
+body[data-theme="light"] #alert .alert-name { color: #784200; }
+#alert .alert-event { flex: none; }
+#alert.long-name { flex-direction: column; align-items: flex-start; gap: 0; width: min(900px, 90%); }
+#alert.long-name .alert-name { max-width: 100%; }
+#alert.exiting { animation: alert-out .25s ease both; }
+@keyframes alert-in { from { opacity: 0; transform: translate(-50%,-8px); } to { opacity: 1; transform: translate(-50%,0); } }
+@keyframes alert-out { to { opacity: 0; transform: translate(-50%,4px); } }
+#audio-unlock { position: absolute; left: 1.5em; bottom: 1.5em; min-height: 44px; border: 2px solid var(--accent, #ffe0a1); border-radius: .5em; padding: .5em .8em; font: inherit; cursor: pointer; }
+#audio-unlock:focus-visible { outline: 3px solid var(--accent, #ffe0a1); outline-offset: 3px; }
+#cover { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: #111318; color: #fff; font-size: 2.5em; font-weight: 600; z-index: 10; }
+body[data-layout="captions"] #live, body[data-layout="captions"] #chat, body[data-layout="captions"] #alert,
+body[data-layout="chat"] #live, body[data-layout="chat"] #caption, body[data-layout="chat"] #alert,
+body[data-layout="alerts"] #live, body[data-layout="alerts"] #caption, body[data-layout="alerts"] #chat { display: none; }
+body[data-layout="chat"] #chat { bottom: var(--chat-bottom, 1.5em); max-height: var(--chat-height, 65%); }
+@media (max-width: 600px) { #chat { width: var(--chat-width, min(22em, 60vw)); } #caption { width: var(--caption-width, 90%); } #alert { max-width: 80%; } }
+@media (prefers-reduced-motion: reduce) { #chat li { animation: none; } #caption, #caption.fading { animation: none; } }

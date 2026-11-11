@@ -1,0 +1,89 @@
+# Fresh-install compatibility for the On Air plugin.
+#
+# Installs a pinned Hermes release with its official installer, then runs the install harness
+# (tools/verify_install.py) and the portability tests against this checkout. The harness creates
+# its own blank HOME / HERMES_HOME, never uses secrets, installs the plugin through Hermes' own
+# plugin manager (`hermes plugins install file://<checkout> --ref <commit> --enable`) and runs
+# every CLI step through the installed `hermes` launcher. Only the launcher bootstrap and the
+# plugin install may reach the package index (--allow-dependency-downloads); every other step runs
+# behind dead proxy variables. No model, TTS provider or Twitch connection is made.
+#
+# Matrix: Hermes v0.22.7's installation guide says current first-party installations run on
+# Python 3.14 and does not promise 3.11-3.13, so every row is 3.14. The plugin requires Hermes
+# >=0.22.7; --strict-version fails the job if the installed version cannot be verified.
+# Windows is not a row yet: Hermes installs there with install.ps1, which this workflow does not
+# drive. This workflow has not run on GitHub yet: until it does, every row stays "not executed"
+# (see docs/compatibility.md).
+name: compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: compatibility-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fresh-install:
+    name: ${{ matrix.os }} / Python ${{ matrix.python }} / Hermes ${{ matrix.hermes }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python: ["3.14"]
+        hermes: ["v0.22.7"]
+    env:
+      HERMES_REF: ${{ matrix.hermes }}
+      PYTHONDONTWRITEBYTECODE: "1"
+      HERMES_DISABLE_LAZY_INSTALLS: "1"
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Install Hermes ${{ matrix.hermes }} with its official installer
+        run: |
+          # The installer script and the source are both taken from the pinned tag.
+          curl -fsSL "https://raw.githubusercontent.com/NousResearch/hermes-agent/${HERMES_REF}/scripts/install.sh" \
+            -o "$RUNNER_TEMP/hermes-install.sh"
+          bash "$RUNNER_TEMP/hermes-install.sh" --branch "${HERMES_REF}" --non-interactive \
+            --skip-browser --skip-computer-use \
+            --dir "$RUNNER_TEMP/hermes-agent" --hermes-home "$RUNNER_TEMP/hermes-install-home"
+          LAUNCHER="$RUNNER_TEMP/hermes-agent/.hermes/bin/hermes"
+          test -x "$LAUNCHER"
+          HERMES_HOME="$RUNNER_TEMP/hermes-install-home" "$LAUNCHER" --version
+          echo "HERMES_LAUNCHER=$LAUNCHER" >> "$GITHUB_ENV"
+
+      - name: Fresh-install harness (plugin manager install, public launcher, strict version)
+        run: |
+          python -B tools/verify_install.py --install-mode installer --allow-dependency-downloads \
+            --strict-version --hermes-launcher "$HERMES_LAUNCHER" --bootstrap-launcher \
+            --hermes-python "$(command -v python)" \
+            --work-base "$RUNNER_TEMP/onair verify" --report "$RUNNER_TEMP/verify-install.json"
+
+      - name: Portability tests
+        env:
+          ONAIR_HERMES_LAUNCHER: ${{ env.HERMES_LAUNCHER }}
+          ONAIR_VERIFY_BOOTSTRAP_LAUNCHER: "1"
+          ONAIR_VERIFY_ALLOW_DOWNLOADS: "1"
+        run: |
+          python -m pip install --disable-pip-version-check --quiet pytest
+          python -B -m pytest -q -p no:cacheprovider -rs tests/portability
+
+      - name: Show the harness report
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/verify-install.json" ]; then cat "$RUNNER_TEMP/verify-install.json"; fi

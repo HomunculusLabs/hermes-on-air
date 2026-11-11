@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>On Air overlay</title>
+  <link rel="stylesheet" href="/overlay/overlay.css">
+</head>
+<body data-layout="full" data-theme="dark">
+  <main id="stage" aria-label="On Air overlay">
+    <div id="live"><span class="dot" aria-hidden="true"></span><span id="live-label">OFF</span></div>
+    <ul id="chat" aria-label="Chat"></ul>
+    <div id="alert" role="status" hidden></div>
+    <div id="caption" aria-live="polite" hidden><span id="speaker"></span><span id="caption-text"></span></div>
+    <button id="audio-unlock" type="button" hidden>Enable audio</button>
+  </main>
+  <div id="cover"><span>Be right back</span></div>
+  <script src="/overlay/overlay.js"></script>
+</body>
+</html>

@@ -1,0 +1,38 @@
+:root {
+  --bg: #fbf6ee; --ink: #2b2420; --muted: #6d625a; --accent: #d9772f; --panel: #ffffff; --code-bg: #2b2420; --code-ink: #fbf6ee;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans", sans-serif;
+  --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "DejaVu Sans Mono", monospace;
+}
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--ink); font-family: var(--font); }
+/* The bottom 250px stay clear of slide text: that is where the overlay's two-line captions sit (1920x1080, scale 1). */
+/* The stage is designed at 1920x1080 and centred; app.js sets --window so it fits any window whole
+   (exactly 1 in a 1920x1080 Browser Source). */
+#stage { position: absolute; left: 50%; top: 50%; margin: -540px 0 0 -960px; transform: scale(var(--window, 1)); transform-origin: center;
+  box-sizing: border-box; width: 1920px; height: 1080px; padding: 120px 160px 250px; }
+#slide, #standby { height: 100%; display: flex; flex-direction: column; justify-content: center; }
+/* Two equal spacers centre the slide while it fits. If a slide still overflows at the smallest text size, they
+   collapse and only its end is cut: the title row above and the caption area below stay clear. */
+/* Leave the default stack inset's right column clear of slide text. */
+#slide { justify-content: flex-start; overflow: hidden; width: calc(100% - 272px); }
+#slide::before, #slide::after { content: ""; flex: 1 1 0; }
+#slide > * { flex: 0 0 auto; }
+#slide[hidden], #standby[hidden], [hidden] { display: none !important; }
+/* --fit is set by app.js: text shrinks in small steps (never below 0.45) until the slide fits its area. */
+h1 { margin: 0 0 40px; font-size: calc(84px * var(--fit, 1)); line-height: 1.1; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+#heading { border-left: 14px solid var(--accent); padding-left: 36px; }
+#stage[data-kind="title"] #heading { border: 0; padding: 0; font-size: calc(112px * var(--fit, 1)); text-align: center; }
+#subtitle { margin: 0; font-size: calc(44px * var(--fit, 1)); color: var(--muted); text-align: center; overflow-wrap: anywhere; }
+#bullets { margin: 0; padding-left: 1.2em; font-size: calc(52px * var(--fit, 1)); line-height: 1.45; }
+#bullets li { overflow-wrap: anywhere; }
+#bullets li::marker { color: var(--accent); }
+#body { margin: 0; font-size: calc(46px * var(--fit, 1)); line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }
+#code-wrap { margin: 0; background: var(--code-bg); color: var(--code-ink); border-radius: 18px; padding: 36px 44px; overflow: hidden; }
+/* Code takes the room left under the heading; lines that do not fit even at the smallest size are cut at the end. */
+#slide > #code-wrap { flex: 0 1 auto; min-height: 0; }
+#language { font: 600 26px var(--font); color: var(--accent); margin-bottom: 14px; text-transform: lowercase; }
+#code-wrap pre { margin: 0; font: calc(30px * var(--fit, 1))/1.4 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+#standby { align-items: center; text-align: center; }
+#standby-title { font-size: 104px; }
+#standby-note { margin: 0; font-size: 44px; color: var(--muted); }
+/* The deck title and slide counter sit at the top, clear of the caption area. */
+#footer { position: absolute; left: 160px; right: 160px; top: 52px; display: flex; justify-content: space-between; font-size: 28px; color: var(--muted); }

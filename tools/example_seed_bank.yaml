@@ -1,0 +1,33 @@
+# Example seed bank for On Air (and the dev fake show).
+#
+# A seed bank is YOUR show content: what the co-host talks about when chat goes quiet. Write
+# it off air, keep every beat short and factual, and say where each fact comes from in
+# `provenance`. The co-host riffs on a beat in its own words (it never reads it out), each
+# beat is used once on the first pass; evergreen beats may be reused according to the
+# exhaustion policy. Every line the co-host says still passes the output guard.
+version: 1
+segments:
+  - name: opening
+    beats:
+      - id: opening-tonight
+        text: "Tonight we are building a small desk lamp that dims itself when the room goes quiet."
+        provenance: "show rundown, item 1"
+      - id: opening-how-chat-works
+        text: "Chat questions get picked by worth, not by speed: real questions and first-time hellos go first."
+        provenance: "On Air README, selective replies"
+  - name: build
+    beats:
+      - id: build-parts
+        text: "The lamp uses a microcontroller, a light sensor and one strip of warm white LEDs."
+        provenance: "show notes, parts list"
+      - id: build-dimming
+        text: "Dimming is a slow fade over about three seconds, so it never feels like a flicker."
+        provenance: "show notes, firmware section"
+      - id: build-mistake
+        text: "The first prototype faded the wrong way and got brighter in the dark, which was a fun bug."
+        provenance: "build log, first prototype"
+  - name: wrap
+    beats:
+      - id: wrap-next-time
+        text: "Next time the lamp gets a case, and chat gets to vote on the colour."
+        provenance: "show rundown, closing item"

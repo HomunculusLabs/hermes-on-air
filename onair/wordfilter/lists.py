@@ -1,0 +1,22 @@
+"""Generated ROT13 terms; attribution and licensing in README.md."""
+ENTRIES = (
+    ('profanity', 'fuvg'),
+    ('profanity', 'juber'),
+    ('profanity', 'nffubyr'),
+    ('profanity', 'ohyyfuvg'),
+    ('profanity', 'onfgneq'),
+    ('profanity', 'ovgpu'),
+    ('profanity', 'phag'),
+    ('profanity', 'qvpx'),
+    ('profanity', 'shpx'),
+    ('profanity', 'zbgureshpxre'),
+    ('slur', 'avttn'),
+    ('slur', 'avttre'),
+    ('slur', 'enturnq'),
+    ('slur', 'fcvp'),
+    ('slur', 'genaal'),
+    ('slur', 'jrgonpx'),
+    ('slur', 'snt'),
+    ('slur', 'snttbg'),
+    ('slur', 'xvxr'),
+)

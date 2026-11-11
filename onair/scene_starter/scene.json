@@ -1,0 +1,15 @@
+{
+  "theme": "cozy-day",
+  "shot": "wide",
+  "quality": "auto",
+  "wall": "#c5c9bb",
+  "floor": "#85796d",
+  "accent": "#bc795e",
+  "camera": [0, 2.2, 7.7],
+  "characterScale": 1,
+  "avatarScale": 1.5,
+  "avatarPosition": [0, 0.1, 0],
+  "voiceOffsetMs": 0,
+  "avatarPose": "relaxed",
+  "avatarFraming": "bust"
+}
