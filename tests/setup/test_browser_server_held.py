@@ -67,12 +67,13 @@ def test_held_model_binds_to_the_dashboard_copy_and_stop_drains_until_released(t
         assert _until(up, 20), (tmp_path / "server.log").read_text()
         held = _http(base, "GET", "/fixture/held")
         assert held == {"module": "_onair_desk_pkg.setup_engine", "engines": 0, "engines_bound": False,
-                        "calls": [], "entered": False, "released": False}, held  # bound BEFORE any engine
+                        "calls": [], "probes": [], "entered": False, "released": False}, held  # bound BEFORE any engine
         status = _http(base, "GET", api + "setup/quick/status")
-        assert status["model_connection"]["usable_here"] is True, status["model_connection"]
+        assert status["model_connection"]["usable_here"] is False and status["model_connection"]["state"] == "untested", status["model_connection"]
         assert _http(base, "GET", "/fixture/held")["engines_bound"] is True  # the engine the routes use
         plan = _http(base, "POST", api + "setup/quick/plan", {"answers": {"channel": "cozy_fox", "use_model": True}})
         assert plan["ok"] is True, plan
+        assert len(_http(base, "GET", "/fixture/held")["probes"]) == 1
         applied = _http(base, "POST", api + "setup/quick/apply", {"digest": plan["digest"], "confirm": True})
         assert applied["ok"] is True, applied
         assert _until(lambda: _http(base, "GET", "/fixture/held")["entered"], 60), _http(base, "GET", "/fixture/held")

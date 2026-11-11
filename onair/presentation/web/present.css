@@ -36,3 +36,31 @@ h1 { margin: 0 0 40px; font-size: calc(84px * var(--fit, 1)); line-height: 1.1; 
 #standby-note { margin: 0; font-size: 44px; color: var(--muted); }
 /* The deck title and slide counter sit at the top, clear of the caption area. */
 #footer { position: absolute; left: 160px; right: 160px; top: 52px; display: flex; justify-content: space-between; font-size: 28px; color: var(--muted); }
+
+/* Work occupies the same caption and default-inset safe area as slides. */
+#stage[data-mode="work"] { background: #101720; color: #e9f0f5; }
+#stage[data-mode="privacy"] { background: #000; }
+#stage[data-mode="work"] #footer, #stage[data-mode="privacy"] #footer { display: none; }
+#work { position: absolute; left: 96px; top: 66px; width: 1392px; height: 764px; display: flex; flex-direction: column; gap: 24px; }
+.work-header { display: flex; align-items: center; justify-content: space-between; gap: 25px; min-height: 96px; }
+.work-title { min-width: 0; font-size: 52px; line-height: 1.12; overflow-wrap: anywhere; }
+.work-title span { color: #8ca4b4; font-weight: 500; }
+.work-title strong { font-weight: 720; }
+.work-status { flex: 0 1 auto; max-width: 370px; border-radius: 30px; padding: 10px 22px; background: #303f50; color: #e1edf4; font-size: 38px; overflow-wrap: anywhere; }
+.work-body { display: flex; gap: 22px; flex: 1; min-height: 0; }
+.work-panes { display: flex; gap: 20px; flex: 1; min-width: 0; }
+.work-pane { position: relative; display: flex; flex-direction: column; min-width: 0; flex: 1; overflow: hidden; background: #1a2531; border: 2px solid #344555; border-radius: 16px; }
+.pane-label { flex: none; padding: 15px 24px; background: #243441; color: #c9d9e2; font-size: 40px; font-weight: 650; overflow-wrap: anywhere; }
+.pane-content { min-height: 0; flex: 1; overflow: hidden; padding: 20px 24px 75px; font: 48px/1.32 var(--mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.work-line { min-height: 1.32em; }
+.work-line.added { background: #1c443c; color: #a1e9bd; }
+.work-line.removed { background: #4c3037; color: #ffc1bd; }
+.work-line.changed { animation: work-flash 600ms ease-out; }
+@keyframes work-flash { from { background-color: #486365; } to { background-color: transparent; } }
+@media (prefers-reduced-motion: reduce) { .work-line.changed { animation: none; } }
+.pane-more { display: none; position: absolute; bottom: 0; left: 0; right: 0; padding: 45px 24px 12px; text-align: right; color: #a9c2cd; font-size: 28px; background: linear-gradient(transparent, #1a2531 55%); }
+.has-more .pane-more { display: block; }
+.work-steps { box-sizing: border-box; width: 320px; flex: none; padding: 20px; border-left: 2px solid #344555; overflow: hidden; }
+.steps-heading { color: #b0c4ce; font-size: 34px; letter-spacing: .06em; }
+.step { display: grid; grid-template-columns: 1em minmax(0,1fr); gap: 8px; margin-top: calc(var(--step-size, 40px) * .55); font-size: var(--step-size, 40px); line-height: 1.22; overflow-wrap: anywhere; }
+.step-done { color: #86b8a4; } .step-current { color: #f2dca1; } .step-next { color: #a9b8c1; }

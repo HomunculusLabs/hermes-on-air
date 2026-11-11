@@ -13,6 +13,18 @@
     lastRevision = snap.revision;
     stage.dataset.revision = String(snap.revision);
     $('deck-title').textContent = snap.deck_title || '';
+    if (snap.mode === 'work' && snap.work) {
+      renderWork(snap.work);
+      return;
+    }
+    show($('work'), false);
+    if (snap.mode === 'privacy') {
+      $('work-panes').replaceChildren(); $('work-title').textContent = ''; $('work-status').textContent = '';
+      $('work-steps').replaceChildren(); previous = [];
+      stage.dataset.mode = 'privacy';
+      show($('slide'), false); show($('standby'), false);
+      return;
+    }
     if (snap.mode === 'slides' && snap.slide) {
       var s = snap.slide;
       stage.dataset.mode = 'slides';
@@ -43,6 +55,77 @@
     }
   }
 
+  var previous = [];
+  function renderWork(work) {
+    stage.dataset.mode = 'work';
+    show($('slide'), false); show($('standby'), false); show($('work'), true);
+    $('work-title').textContent = work.title;
+    $('work-status').textContent = work.status || '';
+    show($('work-status'), !!work.status);
+    var rail = $('work-steps');
+    rail.style.setProperty('--step-size', '40px');
+    while (rail.firstChild) rail.removeChild(rail.firstChild);
+    show(rail, !!work.steps);
+    if (work.steps) {
+      var head = document.createElement('div'); head.className = 'steps-heading'; head.textContent = 'PROGRESS'; rail.appendChild(head);
+      [['done', work.steps.done], ['current', [work.steps.current]], ['next', work.steps.next]].forEach(function (group) {
+        group[1].forEach(function (text) {
+          var item = document.createElement('div'); item.className = 'step step-' + group[0];
+          var icon = document.createElement('span'); icon.textContent = group[0] === 'done' ? '\u2713' : group[0] === 'current' ? '\u25cf' : '\u25cb';
+          var label = document.createElement('span'); label.textContent = text;
+          item.appendChild(icon); item.appendChild(label);
+          rail.appendChild(item);
+        });
+      });
+      // Preserve all six bounded labels instead of clipping long progress lists.
+      var stepSize = 40;
+      while (rail.scrollHeight > rail.clientHeight + 1 && stepSize > 12) {
+        stepSize -= 2;
+        rail.style.setProperty('--step-size', stepSize + 'px');
+      }
+    }
+    var panes = $('work-panes');
+    while (panes.firstChild) panes.removeChild(panes.firstChild);
+    work.panes.forEach(function (pane, index) {
+      var box = document.createElement('article'); box.className = 'work-pane';
+      box.dataset.kind = pane.kind;
+      var label = document.createElement('div'); label.className = 'pane-label';
+      label.textContent = pane.label + (pane.language ? '  /  ' + pane.language : '');
+      box.appendChild(label);
+      var content = document.createElement('div'); content.className = 'pane-content';
+      var lines = pane.content.split('\n');
+      lines.forEach(function (text, i) {
+        var line = document.createElement('div'); line.className = 'work-line';
+        line.textContent = text || '\u00a0';
+        if (pane.kind === 'diff' && text[0] === '+') line.classList.add('added');
+        if (pane.kind === 'diff' && text[0] === '-') line.classList.add('removed');
+        if (previous[index] && previous[index][i] !== text) line.classList.add('changed');
+        content.appendChild(line);
+      });
+      box.appendChild(content);
+      var more = document.createElement('div'); more.className = 'pane-more'; box.appendChild(more);
+      panes.appendChild(box);
+      previous[index] = lines;
+    });
+    // Measure only after all panes are present, so flex widths are final.
+    Array.from(panes.children).forEach(function (box) {
+      var content = box.querySelector('.pane-content');
+      var more = box.querySelector('.pane-more');
+      if (box.dataset.kind === 'terminal') {
+        content.scrollTop = content.scrollHeight;
+        var top = content.getBoundingClientRect().top;
+        var first = Array.from(content.children).find(function (line) { return line.getBoundingClientRect().bottom > top; });
+        if (first && first.getBoundingClientRect().top < top) content.scrollTop -= (top - first.getBoundingClientRect().top) / (parseFloat(getComputedStyle(stage).getPropertyValue('--window')) || 1);
+      } else {
+        var hidden = Array.from(content.children).filter(function (line) {
+          return line.offsetTop + line.offsetHeight > content.offsetTop + content.clientHeight + 1;
+        }).length;
+        if (hidden) { more.textContent = hidden + ' more lines'; box.classList.add('has-more'); }
+      }
+    });
+    previous.length = work.panes.length;
+  }
+
   // Shrink the slide's text in small steps until it fits its area (the bottom band is kept clear for captions).
   // A code block counts as fitting only when none of its lines are cut.
   var MIN_FIT = 0.45;
@@ -67,6 +150,9 @@
     $('standby-note').textContent = note;
     $('counter').textContent = '';
     show($('slide'), false);
+    show($('work'), false);
+    $('work-panes').replaceChildren(); $('work-title').textContent = ''; $('work-status').textContent = '';
+    $('work-steps').replaceChildren(); previous = [];
     show($('standby'), true);
   }
 

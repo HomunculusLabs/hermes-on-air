@@ -43,7 +43,7 @@ presentation.teardown()                                 # on plugin shutdown
 Manifest additions for the integrator (`plugin.yaml`):
 
 ```yaml
-provides_tools: [onair_present_status, onair_present_publish, onair_present_control, onair_obs_setup,
+provides_tools: [onair_work_share, onair_present_status, onair_present_publish, onair_present_control, onair_obs_setup,
                  onair_obs_scene, onair_window_share, onair_broadcast, onair_layout]
 optional_env:
   - {name: ONAIR_OBS_URL, description: "OBS WebSocket URL (loopback only, default ws://127.0.0.1:4455)", password: false}
@@ -64,6 +64,7 @@ For the three-box layout, dashboard Views and the optional 3D scene see [Views a
 
 | Tool | Arguments | Effect |
 |---|---|---|
+| `onair_work_share` | `action`: show, update, append, status, step, clear, read | Bounded public work view on the existing presentation page. See [Work view](work-share.md) for arguments, safety and privacy. |
 | `onair_present_status` | `include_obs` (default true) | Read-only: surface (serving, URL, connected pages), program (mode, slide, revision, headings), and OBS: program scene, owned sources, speech-audio check, window readiness, stream output. |
 | `onair_present_publish` | `deck {title, slides[]}` or `sample: true`; `start` | Validates and replaces the public deck, serves if needed, shows slide `start`. |
 | `onair_present_control` | `action`: next, prev, goto (`index`), standby (`title`, `note`), resume, serve, stop_serving | Moves the program; returns the new state. |

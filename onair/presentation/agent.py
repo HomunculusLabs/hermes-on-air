@@ -48,6 +48,24 @@ _SLIDE = {"type": "object", "additionalProperties": False, "required": ["kind"],
     "language": {"type": "string", "maxLength": LIMITS["language"]}}}
 
 SCHEMAS: dict[str, dict] = {
+    "onair_work_share": {"name": "onair_work_share", "description": (
+        "Publish a bounded PUBLIC work view on the existing slides Browser Source, never screen capture. "
+        "Only explicitly supplied text is published. Refuses leak shapes. Work is blank under privacy, off air "
+        "or when the configured overlay cannot prove safety. Actions: show, update, append, status, step, clear, read."),
+        "parameters": {"type": "object", "additionalProperties": False, "required": ["action"], "properties": {
+            "action": {"type": "string", "enum": ["show", "update", "append", "status", "step", "clear", "read"]},
+            "title": {"type": "string", "maxLength": 80},
+            "panes": {"type": "array", "minItems": 1, "maxItems": 2, "items": {
+                "type": "object", "additionalProperties": False, "required": ["kind", "label", "content"], "properties": {
+                    "kind": {"type": "string", "enum": ["code", "terminal", "text", "diff"]},
+                    "label": {"type": "string", "maxLength": 40}, "language": {"type": "string", "maxLength": 24},
+                    "content": {"type": "string", "maxLength": 6000}}}},
+            "pane": {"type": "integer", "minimum": 0, "maximum": 1},
+            "content": {"type": "string", "maxLength": 6000}, "text": {"type": "string", "maxLength": 6000},
+            "status": {"type": "string", "maxLength": 80},
+            "done": {"type": "array", "maxItems": 6, "items": {"type": "string", "maxLength": 60}},
+            "current": {"type": "string", "maxLength": 60},
+            "next": {"type": "array", "maxItems": 6, "items": {"type": "string", "maxLength": 60}}}}},
     "onair_present_status": {"name": "onair_present_status", "description": (
         "Read-only. What is actually on the presentation surface (serving, URL, mode, slide, revision, connected "
         "pages) and, when include_obs is true, what OBS reports: program scene, owned sources, speech-audio check, "
@@ -179,8 +197,9 @@ def _config(ctx: Any, config: dict | None) -> tuple[ObsConfig, int]:
     known = {k: cfg[k] for k in ("presentation_scene", "window_scene", "presentation_input", "overlay_input",
                                  "window_input", "width", "height", "start_deadline_s", "stop_deadline_s", "poll_s", "scene_view")
              if k in cfg}
+    from ..secrets import get
     obs = ObsConfig(url=str(cfg.get("obs_url") or env.get("ONAIR_OBS_URL") or "ws://127.0.0.1:4455"),
-                    password=lambda: os.environ.get("ONAIR_OBS_PASSWORD", ""),
+                    password=lambda: get("ONAIR_OBS_PASSWORD"),
                     extra_scenes=tuple(str(s) for s in cfg.get("approved_scenes") or ()),
                     overlay_url=str(cfg.get("overlay_url") or f"http://127.0.0.1:{overlay_port}/overlay"), **known)
     port = int(cfg["present_port"] if "present_port" in cfg else env.get("ONAIR_PRESENT_PORT") or DEFAULT_PRESENT_PORT)
@@ -212,6 +231,8 @@ class Runtime:
         self._loop: asyncio.AbstractEventLoop | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
+        self._work_last_push = 0.0
+        self._work_push_handle = None
         kwargs = {"client": client} if client is not None else {}
         self.obs = ObsControl(obs, lambda: self.surface.url if self.surface else "", **kwargs)
         self._start_code: tuple[str, float] | None = None
@@ -262,7 +283,7 @@ class Runtime:
     def serve(self) -> dict:
         with self._lock:
             if self.surface is None or not self.surface.serving:
-                surface = PresentationSurface(self.program, port=self.port)
+                surface = PresentationSurface(self.program, port=self.port, overlay_url=lambda: self.obs.cfg.overlay_url)
                 self.port_note = ""
                 try:
                     self.call(surface.start(), 10)
@@ -272,7 +293,7 @@ class Runtime:
                             f"The presentation port {self.port} is in use. Nothing was started. It was chosen in the "
                             "On Air settings (presentation.present_port) or ONAIR_PRESENT_PORT: the owner can set a "
                             "free port there, or remove it so On Air picks a free loopback port by itself.")}
-                    surface = PresentationSurface(self.program, port=0)
+                    surface = PresentationSurface(self.program, port=0, overlay_url=lambda: self.obs.cfg.overlay_url)
                     try:
                         self.call(surface.start(), 10)
                     except OSError:
@@ -288,8 +309,35 @@ class Runtime:
         if s is not None and s.serving and s.loop is not None:
             s.loop.call_soon_threadsafe(s.broadcast)
 
+    def _push_work(self, urgent: bool = False) -> None:
+        """Coalesce routine work frames to four per second; clearing is immediate."""
+        s = self.surface
+        if not s or not s.serving or not s.loop:
+            return
+        def send():
+            self._work_push_handle = None
+            self._work_last_push = time.monotonic()
+            if self.surface is s and s.serving:
+                s.broadcast(urgent=urgent)
+        def schedule():
+            if urgent:
+                if self._work_push_handle:
+                    self._work_push_handle.cancel()
+                send()
+                return
+            delay = max(0.0, .25 - (time.monotonic() - self._work_last_push))
+            if self._work_push_handle is None:
+                self._work_push_handle = s.loop.call_later(delay, send)
+        s.loop.call_soon_threadsafe(schedule)
+
+    def public(self) -> dict:
+        s = self.surface
+        return s.snapshot() if s and s.serving else self.program.public()
+
     def state(self) -> dict:
         s = self.surface
+        if s and s.serving:
+            s.enforce_source()
         surface = {"serving": bool(s and s.serving), "url": s.url if s else "", "pages_connected": s.clients if s else 0,
                    "label": "Browser Source (web page, not screen capture)"}
         if self.port_note and s is not None and s.serving:
@@ -339,12 +387,37 @@ def make_handlers(ctx: Any, rt: Runtime) -> dict:
             args = args if isinstance(args, dict) else {}
             extra = sorted(set(args) - allowed_keys)
             if extra:
+                if name == "onair_work_share":
+                    return json.dumps({"ok": False, "refused": True, "error": "Unexpected field: only the documented fields are allowed."})
                 return json.dumps({"ok": False, "error": "Not accepted here: " + ", ".join(extra)})
             try:
                 return json.dumps(fn(args), default=str)
             except Exception as exc:  # noqa: BLE001 - report, never crash the agent turn
                 return json.dumps({"ok": False, "error": f"{type(exc).__name__}: presentation action failed"})
         return handler
+
+    def work_share(a):
+        action = a.get("action")
+        if action == "read":
+            if set(a) != {"action"}:
+                return {"ok": False, "error": "Give only action for read."}
+            snap = rt.public()
+            return {"ok": True, "revision": snap["revision"], "summary": "Current public program.", "program": snap}
+        if action == "show":
+            from .work import apply
+            _, errors = apply(None, a)
+            if errors:
+                return {"ok": False, "refused": True, "errors": errors, "note": "Nothing was published."}
+            served = rt.serve()
+            if not served.get("ok"):
+                return served
+        ok, result = rt.program.work_action(a)
+        if not ok:
+            return {"ok": False, "refused": True, "errors": result, "note": "Nothing was published."}
+        rt._push_work(urgent=action == "clear")
+        snap = rt.public()
+        return {"ok": True, "revision": snap["revision"], "summary": "Work cleared." if action == "clear" else "Work updated.",
+                "program": snap, "surface": rt.state()["surface"]}
 
     def status(a):
         out = {"ok": True, **rt.state()}
@@ -490,10 +563,29 @@ def make_handlers(ctx: Any, rt: Runtime) -> dict:
             return out
         return {"ok": False, "error": "unknown action"}
 
-    fns = {"onair_present_status": status, "onair_present_publish": publish, "onair_present_control": control,
+    fns = {"onair_work_share": work_share, "onair_present_status": status, "onair_present_publish": publish, "onair_present_control": control,
            "onair_obs_setup": obs_setup, "onair_obs_scene": obs_scene, "onair_window_share": window,
            "onair_broadcast": broadcast, "onair_layout": arrange}
     return {name: guarded(name, fn) for name, fn in fns.items()}
+
+
+def make_present_command(ctx: Any, rt: Runtime):
+    def command(raw_args: str = "", **_kw: Any) -> str:
+        ok, reason = owner_session(ctx)
+        if not ok:
+            return reason
+        words = (raw_args or "").split()
+        if words == ["work", "clear"]:
+            ok, result = rt.program.work_action({"action": "clear"})
+            if ok:
+                rt._push_work(urgent=True)
+                return f"Work cleared; revision {result['revision']}."
+            return "Work could not be cleared."
+        if words == ["work", "status"]:
+            snap = rt.public()
+            return f"Presentation mode: {snap['mode']}; revision {snap['revision']}."
+        return "Use /onair-present work clear or /onair-present work status."
+    return command
 
 
 def _describe_stream(out: dict) -> str:
@@ -604,6 +696,9 @@ def register(ctx: Any, config: dict | None = None, client: Any = None) -> list:
                                          "confirm-window / revoke-window (your chosen OBS capture)",
                              args_hint="[status|start <code>|stop|confirm-window|revoke-window]")
         done.append("command:onair-broadcast")
+        ctx.register_command("onair-present", make_present_command(ctx, rt),
+                             description="Work view: clear or report status", args_hint="work [clear|status]")
+        done.append("command:onair-present")
     return done
 
 

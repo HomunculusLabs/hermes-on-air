@@ -1,7 +1,7 @@
 # Views and boxes
 
 Views arranges **three boxes** in the owned `On Air: Boxes` OBS scene: Main, Sub 1 and Sub 2.
-A box can contain the optional 3D **Scene**, **Slides**, or one owner-selected **Window**;
+A box can contain the optional 3D **Scene**, **Slides** (including the [work view](work-share.md)), or one owner-selected **Window**;
 either sub can also be **Empty**. Main cannot be empty. Each source appears at most once: putting
 it in another box moves it. Swap any two boxes unless that would empty Main. **Stack** fills the
 canvas with Main and places smaller subs in a corner; **Side** places Main to the left and stacks

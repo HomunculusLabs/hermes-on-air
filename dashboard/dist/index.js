@@ -29,8 +29,15 @@
   // Resolve the companion asset relative to this profile's loaded plugin entry.
   const MIC_ASSET = document.currentScript && document.currentScript.src
     ? new URL("host-mic.js", document.currentScript.src).href : "/dashboard-plugins/on-air/dist/host-mic.js";
+  const LIVE_ASSET = document.currentScript && document.currentScript.src ? new URL("live.js", document.currentScript.src).href : "/dashboard-plugins/on-air/dist/live.js";
   const POLL_MS = 1000; // live updates by fast polling
   const CHAT_QUIET_MS = 15000; // no events for this long -> "chat: quiet"
+  function coreDeadline(promise) {
+    return new Promise((resolve, reject) => {
+      const timer = window.setTimeout(() => reject(new Error("show timed out")), 4000);
+      promise.then(value => { window.clearTimeout(timer); resolve(value); }, error => { window.clearTimeout(timer); reject(error); });
+    });
+  }
 
   // Embedded to avoid asset fetches; kept in sync with rule-labels.json by tests.
   const RULE_LABELS = {
@@ -380,10 +387,13 @@
     }
   }
 
-  function HostLine({ data, online, fence }) {
+  function HostLine({ data, online, fence, onMicStatus, compact = false }) {
     const newDraftId = () => Array.from(window.crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, "0")).join("");
     const [draft, setDraft] = useState({text:"", epoch:null, boot:null, fence:null});
     const [message, setMessage] = useState("");
+    const [micMessage, setMicMessage] = useState("");
+    const displayMic = React.useCallback(value => {setMicMessage(value); if (value) setMessage("");}, []);
+    const [shortcuts, setShortcuts] = useState(false);
     const [busy, setBusy] = useState(false);
     const cutLock = useRef(false);
     const ready = !!(online && data && data.host_turns && data.host_turns.enabled === true &&
@@ -422,12 +432,14 @@
       function key(e) {
         if (e.key.toLowerCase() !== "c" || e.repeat || e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented ||
             (e.target && (e.target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)))) return;
+        const inTalk = !!(e.target && e.target.closest && e.target.closest('.onair-host-line, .onair-talk-disclosure'));
+        if (!shortcuts && !inTalk) return;
         if (ready && !busy) {e.preventDefault(); cut();}
       }
       window.addEventListener("keydown", key);
       return () => window.removeEventListener("keydown", key);
-    }, [ready, busy, data && data.epoch, data && data.voice_boot]);
-    if (!online || !data || !data.host_turns || data.host_turns.enabled !== true) return null;
+    }, [ready, busy, shortcuts, data && data.epoch, data && data.voice_boot]);
+    if (!data || !data.host_turns || data.host_turns.enabled !== true) return null;
     async function send() {
       if (busy || !canType || stale || !draft.text.trim()) return;
       setBusy(true);
@@ -439,16 +451,18 @@
       } catch (error) { setMessage(error && error.message || "Could not reach the show."); }
       finally { setBusy(false); }
     }
-    return h("section", {className:"onair-panel onair-host-line", "aria-label":"Host line"},
+    return h("section", {className:"onair-panel onair-host-line" + (compact ? " onair-host-line-compact" : ""), "aria-label":"Host line"},
       h("h2", null, "Host line"),
+      compact && !Mic && h("div", {className:"compact-mic"}, h("button", {type:"button",className:"onair-mic-pill",disabled:true,title:"Microphone unavailable"}, "🎙 Mic off")),
+      Mic && h(Mic, {data, online, compact, onDisplayStatus:displayMic, moreControls:compact && h(React.Fragment, null, h("label", {className:"onair-check"}, h("input", {type:"checkbox", checked:shortcuts, onChange:e=>setShortcuts(e.target.checked)}), " Keyboard shortcuts"), h("p", null, "Cut in stops the current line and discards waiting work. C and V work when Talk has focus (outside text fields), or when shortcuts are enabled below.")), shortcutsEnabled:shortcuts, onOpenStatus:onMicStatus, draftPresent:!!draft.text && !stale, onStart:()=>setMessage(""), onReview:(value, epoch, boot)=>setDraft({text:value, epoch, boot, fence, retry:false, id:newDraftId()})}),
       h("label", {className:"onair-field"}, "Your line", h("input", {value:stale ? "" : draft.text, disabled:!canType,
         onChange:e=>{ const text = e.target.value; setDraft(d => ({text, epoch:d.text ? d.epoch : data.epoch, boot:d.text ? d.boot : data.voice_boot, fence:d.text ? d.fence : fence, retry:d.text ? d.retry : retry,
           id:d.text ? d.id : newDraftId()})); }, maxLength:2000})),
       h("button", {type:"button", disabled:busy || !canType || stale || !draft.text.trim(), onClick:send}, "Send to co-host"),
       h("button", {type:"button", className:"onair-cut-button", disabled:busy || !ready, onClick:cut}, "Cut in"),
-      h("p", null, "Cut in stops the current line and discards waiting work. Shortcut: C when not typing."),
-      h("p", {role:"status"}, message),
-      Mic && h(Mic, {data, online, draftPresent:!!draft.text && !stale, onStart:()=>setMessage(""), onReview:(value, epoch, boot)=>setDraft({text:value, epoch, boot, fence, retry:false, id:newDraftId()})}));
+      compact ? null : h("p", null, "Cut in stops the current line and discards waiting work. C and V work when Talk has focus (outside text fields), or when shortcuts are enabled below."),
+      compact ? null : h("label", {className:"onair-check"}, h("input", {type:"checkbox", checked:shortcuts, onChange:e=>setShortcuts(e.target.checked)}), " Keyboard shortcuts"),
+      h("p", {role:"status", className:compact ? "onair-compact-status" : undefined, title:compact ? (message || micMessage) : undefined}, compact ? (message || micMessage) : message));
   }
 
   function Views() {
@@ -551,6 +565,7 @@
     const [data, setData] = useState(null);
     const [queue, setQueue] = useState([]);
     const [receipts, setReceipts] = useState([]);
+    const [preparing, setPreparing] = useState([]);
     const [guardLimit, setGuardLimit] = useState({ signature: null, visible: 0 });
     const [guardSize, setGuardSize] = useState(0);
     const [queueMore, setQueueMore] = useState(0);
@@ -566,6 +581,8 @@
     const [assist, setAssist] = useState(null);
     const [showMoreAlerts, setShowMoreAlerts] = useState(false);
     const [online, setOnline] = useState(false);
+    const [talkOpen, setTalkOpen] = useState(false);
+    const [micNotice, setMicNotice] = useState('');
     const [hostFence, setHostFence] = useState(0);
     // phase: connecting (no answer yet) · setup (never connected) · online · lost (was connected).
     const [conn, setConn] = useState({ phase: "connecting", lastOk: 0, reason: "", checks: 0 });
@@ -589,11 +606,12 @@
 
     async function refresh() {
       const gen = ++generation.current;
-      const results = await Promise.allSettled([
-        get("state"), get("pending"), get("receipts?limit=60"), get("alerts"), get("alerts/recent"), get("assist"),
+      // The show state and queue determine connectivity; optional panels must not delay them.
+      const optional = Promise.allSettled([
+        get("receipts?limit=60"), get("alerts"), get("alerts/recent"), get("assist"),
       ]);
+      const [s, p] = await Promise.allSettled([coreDeadline(get("state")), coreDeadline(get("pending"))]);
       if (!alive.current || gen !== generation.current || safetyPending.current) return undefined;
-      const [s, p, r, a, ar, asr] = results;
       const state = s.status === "fulfilled" ? s.value : null;
       const pend = p.status === "fulfilled" ? p.value : null;
       const answered = state && typeof state === "object" && pend && Array.isArray(pend.pending);
@@ -618,16 +636,19 @@
       setOnline(true);
       setConn({ phase: "online", lastOk: Date.now(), reason: "", checks: 0 });
       setSelected((n) => Math.min(n, Math.max(0, pend.pending.length - 1)));
-      const receiptList = r.status === "fulfilled" && Array.isArray(r.value && r.value.receipts) ? r.value.receipts.slice(-60) : null;
-      setReceiptsAvailable(!!receiptList);
-      setReceipts(receiptList || []);
-      if (a.status === "fulfilled" && a.value && typeof a.value === "object") setAlerts(a.value.alerts || a.value);
-      else { setAlerts(null); setAlertDraft(null); }
-      if (ar.status === "fulfilled" && ar.value) {
-        const list = Array.isArray(ar.value) ? ar.value : ar.value.alerts || ar.value.recent || [];
-        setRecent(Array.isArray(list) ? list : null);
-      } else setRecent(null);
-      setAssist(asr.status === "fulfilled" && asr.value && asr.value.assist && typeof asr.value.assist === "object" ? asr.value.assist : null);
+      optional.then(([r, a, ar, asr]) => {
+        if (!alive.current || gen !== generation.current || safetyPending.current) return;
+        const receiptList = r.status === "fulfilled" && Array.isArray(r.value && r.value.receipts) ? r.value.receipts.slice(-60) : null;
+        setReceiptsAvailable(!!receiptList);
+        setReceipts(receiptList || []);
+        if (a.status === "fulfilled" && a.value && typeof a.value === "object") setAlerts(a.value.alerts || a.value);
+        else { setAlerts(null); setAlertDraft(null); }
+        if (ar.status === "fulfilled" && ar.value) {
+          const list = Array.isArray(ar.value) ? ar.value : ar.value.alerts || ar.value.recent || [];
+          setRecent(Array.isArray(list) ? list : null);
+        } else setRecent(null);
+        setAssist(asr.status === "fulfilled" && asr.value && asr.value.assist && typeof asr.value.assist === "object" ? asr.value.assist : null);
+      });
       if (typeof state.seq === "number" && lastSeqMove.current.seq !== state.seq) {
         lastSeqMove.current = { seq: state.seq, at: Date.now() };
       }
@@ -653,6 +674,17 @@
         window.clearInterval(timer);
       };
     }, []);
+
+    const armedTalk = !!(!practice && online && data && data.live === true && data.host_turns && data.host_turns.enabled === true);
+    useEffect(() => {if (armedTalk) setTalkOpen(true);}, [armedTalk]);
+
+    useEffect(() => {
+      setPreparing(previous => {
+        const next = previous.filter(item => online && data && !data.privacy && data.epoch === item.epoch && data.voice_boot === item.boot &&
+          !receipts.some(r => r && r.line_id === item.id && (r.kind === "aired" || r.kind === "line_dropped" || (r.kind === "line" && r.disposition === "interrupted"))));
+        return next.length === previous.length ? previous : next;
+      });
+    }, [receipts, online, data && data.privacy, data && data.epoch, data && data.voice_boot]);
 
     const guardRows = receipts.filter((entry) => entry && (entry.kind === "line" && entry.disposition === "withheld" ||
       entry.kind === "chat" && entry.verdict !== "worthy" && entry.verdict !== "routine")).slice().reverse();
@@ -720,6 +752,7 @@
     async function action(path, body, safety) {
       if (!current.current.online || (!safety && (actionLock.current || safetyPending.current))) return;
       const label = actionLabel(path, body, current.current.data && current.current.data.mode);
+      const approvalBoot = current.current.data && current.current.data.voice_boot;
       if (path === "stop" || (path === "privacy" && body && body.on === true) ||
           (path === "mode" && body && body.mode === "off_air")) setHostFence(n => n + 1);
       if (!safety) {
@@ -736,6 +769,8 @@
       try {
         await post(path, body);
         confirmed = true;
+        if (alive.current && path === "approve")
+          setPreparing(previous => [...previous.filter(item => item.id !== body.line_id), {id:body.line_id, epoch:body.epoch, boot:approvalBoot}]);
         message = label + " — " + path + " confirmed by the show.";
       } catch (error) {
         message = label + " — " + path + " NOT confirmed: " + (error && error.message ? error.message : "failed");
@@ -962,7 +997,7 @@
           : "Not connected to a show yet. Follow the steps below.";
 
     const plain = plainStatus(shown, online, practice, queue.length, preflightBlocked, lost);
-    return h("main", { className: "onair-desk" + (practice ? " onair-practice-desk" : "") },
+    return h("main", { className: "onair-desk" + (practice ? " onair-practice-desk" : "") + (armedTalk ? " onair-has-talk" : "") },
       shown && shown.privacy && h("div", { className: "onair-privacy-banner", role: "status" }, PRIVACY_BANNER),
       h("header", { className: "onair-header" },
         h("div", null, h("p", { className: "onair-eyebrow" }, practice ? "PRACTICE DESK · NOTHING LEAVES THIS COMPUTER" : "OPERATOR DESK"), h("h1", null, practice ? "Practice show" : "On Air")),
@@ -978,6 +1013,7 @@
         h("p", { className: "onair-notice" },
           h("span", { role: "status", "aria-live": "polite" }, notice ? "Last action: " + notice : defaultNotice),
           notice && h("span", { className: "onair-notice-age", "aria-hidden": "true" }, " (" + secondsAgo(noticeAt.current.at) + ")")),
+        micNotice && h("p", {role:"status", className:"onair-mic-notice"}, micNotice),
         connectPanel),
 
       h("section", { className: "onair-panel onair-safety", "aria-labelledby": "onair-safety" },
@@ -1000,8 +1036,8 @@
 
       !practice && h("details", {className:"onair-views-disclosure"},
         h("summary", null, "Views and window sharing"), h(Views)),
-      !practice && data && data.host_turns && data.host_turns.enabled === true && h("details", {className:"onair-talk-disclosure"},
-        h("summary", null, "Talk to the co-host"), h(HostLine, {data, online, fence:hostFence})),
+      !practice && data && data.host_turns && data.host_turns.enabled === true && h("details", {className:"onair-talk-disclosure", open:talkOpen, onToggle:e=>setTalkOpen(e.currentTarget.open)},
+        h("summary", null, "Talk to the co-host"), h(HostLine, {data, online, fence:hostFence, onMicStatus:props.onMicStatus || setMicNotice})),
       h("div", { className: "onair-grid" },
         h("section", { className: "onair-panel", "aria-labelledby": "onair-mode" },
           h("h2", { id: "onair-mode" }, "Show state"),
@@ -1024,6 +1060,7 @@
 
         h("section", { className: "onair-panel", "aria-labelledby": "onair-queue" },
           h("h2", { id: "onair-queue" }, "Approval queue ", h("span", { className: "onair-count" }, online ? queue.length + " waiting" : "—")),
+          preparing.length > 0 && h("p", {role:"status"}, "Voice is being prepared..."),
           h("p", { className: "onair-help onair-approve-explain" }, h("strong", null, "Approve"), " = put this exact line on the overlay (spoken only if voice is on). ", h("strong", null, "Reject"), " = drop it; nothing is shown."),
           h("p", { className: "onair-help" }, "Keys: A approve · R reject · ArrowUp/ArrowDown (or J/K) select."),
           !online
@@ -1707,29 +1744,38 @@
     return h(QuickStart, { onAdvanced: () => setAdvanced(true) });
   }
 
-  const TABS = [["setup", "Start here"], ["practice", "Practice"], ["desk", "Desk"], ["help", "Help"]];
+  const TABS = [["live", "Live"], ["details", "Details"]];
+  const SECONDARY = [["setup", "Start here"], ["practice", "Practice"], ["help", "Help"]];
   function App() {
     const stored = load(TAB_KEY, {});
-    const [tab, setTab] = useState(typeof stored.tab === "string" ? stored.tab : "desk");
+    const [tab, setTab] = useState(stored.tab === "desk" ? "details" : [...TABS, ...SECONDARY].some(([name]) => name === stored.tab) ? stored.tab : "live");
+    const secondary = useRef(null);
+    const [Live, setLive] = useState(() => window.OnAirLive || null), [liveError, setLiveError] = useState(false);
+    useEffect(() => { if (window.OnAirLive) return; let active = true; const script = document.createElement("script"); script.src = LIVE_ASSET; script.onload = () => { if (active) setLive(() => window.OnAirLive); }; script.onerror = () => { if (active) setLiveError(true); }; document.head.appendChild(script); return () => { active = false; script.remove(); }; }, []);
     const [status, setStatus] = useState(null);
+    const [micNotice, setMicNotice] = useState("");
     useEffect(() => {
       let live = true;
       ask("setup/status").then((r) => {
         if (!live || !r || r.ok !== true) return;
         setStatus(r);
-        if (typeof stored.tab !== "string" && !r.desk_connected) setTab("setup");
       });
       return () => { live = false; };
     }, []);
-    const go = (name) => { setTab(name); save(TAB_KEY, { tab: name }); };
+    const go = (name) => { const target = name === "desk" ? "details" : name; if (secondary.current) secondary.current.open = false; setTab(target); save(TAB_KEY, { tab: target }); };
     const replay = () => { save(TOUR_KEY, { step: 0, skipped: false }); go("practice"); };
     return h("div", { className: "onair-app" },
       h("nav", { className: "onair-tabs", "aria-label": "On Air sections" }, TABS.map(([name, label]) =>
-        h("button", { key: name, type: "button", className: "onair-tab" + (tab === name ? " onair-tab-current" : ""), "aria-current": tab === name ? "page" : undefined, onClick: () => go(name) }, label))),
-      tab === "setup" ? h(SetupTab, { status, onPractice: () => go("practice"), onDesk: () => go("desk") })
+        h("button", { key: name, type: "button", className: "onair-tab" + (tab === name ? " onair-tab-current" : ""), "aria-current": tab === name ? "page" : undefined, onClick: () => go(name) }, label)),
+        h("details", {className:"onair-secondary", ref:secondary, onKeyDown:e=>{if(e.key === "Escape" && secondary.current.open){e.stopPropagation();secondary.current.open=false;secondary.current.querySelector("summary").focus();}}},
+          h("summary", {className:SECONDARY.some(([name])=>name===tab) ? "onair-secondary-current" : undefined}, "Setup & help"),
+          h("div", {className:"onair-secondary-items"}, SECONDARY.map(([name,label])=>h("button", {type:"button",key:name,"aria-current":tab===name?"page":undefined,onClick:()=>go(name)},label))))),
+      micNotice && h("p", {role:"status", className:"onair-mic-notice"}, micNotice),
+      tab === "live" ? (Live ? h(Live, { HostLine, onMicStatus:setMicNotice }) : h("p", { role: "status" }, liveError ? "Live could not load. Open Details." : "Loading Live…"))
+        : tab === "setup" ? h(SetupTab, { status, onPractice: () => go("practice"), onDesk: () => go("desk") })
         : tab === "practice" ? h(Practice, { onSetup: () => go("setup"), onDesk: () => go("desk") })
           : tab === "help" ? h(Help, { onReplay: replay, onSetup: () => go("setup") })
-            : h(Desk, { onSetup: () => go("setup"), onPractice: () => go("practice") }));
+            : h(Desk, { onSetup: () => go("setup"), onPractice: () => go("practice"), onMicStatus:setMicNotice }));
   }
 
   window.__HERMES_PLUGINS__.register("on-air", App);

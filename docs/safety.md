@@ -12,9 +12,12 @@ The stage accepts text only on the gateway's final-delivery path for its current
 Hermes's per-turn hooks identify the same successful, uninterrupted text response and its exact
 contents. Missing or inconsistent proof is withheld. The stage also checks the entire delivery
 for known Hermes error and notice shapes before splitting it into lines. Known notices are not
-drafted, captioned or spoken. The desk shows a short failure category; the plugin logs provider
-detail only at debug level, rather than putting it on the desk or in a failure receipt (Hermes itself may log or persist it before the adapter sees it). The per-line guard also blocks known system text. An empty or
-timed-out turn counts as a failure.
+drafted, captioned or spoken. The desk shows a short failure category. For setup and private-show
+model failures, On Air logs only the step, failure category (usually the exception type), numeric
+HTTP status when available and elapsed milliseconds at debug level; it never logs exception text,
+credentials, URLs or response bodies there. Hermes itself may log or persist provider detail before
+On Air sees it. The per-line guard also blocks known system text. An empty or timed-out turn counts
+as a failure.
 
 After `model_failure_pause_after` consecutive failures (default **3**, a positive integer in the
 stage plugin settings), the stage pauses and stops automatic chat and beat turns. The desk says
@@ -53,6 +56,16 @@ unmute or lift privacy. Optional hold-to-talk begins recording only on an owner 
 for the owner's configured speech-to-text, and defaults to transcript review. That service may
 be cloud-hosted. On Air does not add the owner's microphone to the broadcast; an independent OBS
 microphone needs its own privacy control. See [Talk](talk.md).
+
+Open mic is a separate, default-off owner setting and requires a fresh owner click on every
+page load. While the stream is open, the desk displays a prominent listening indicator. Each
+utterance goes to the owner's configured speech-to-text, which may be a cloud service; it can
+be wrong and cannot recall audio already sent. The transcript becomes HOST TEXT for a host
+turn, not a caption or the owner's voice on air. Only the co-host's reply can be published,
+subject to the usual guard, approval mode, privacy and mute controls. In autonomous mode a
+guarded reply can air without owner approval. Open mic is not a wake word or an approval tool.
+Privacy, Stop, off air, loss or restart of the stage, and other documented conditions close
+capture and discard buffered clips. The model cannot start the microphone or change its mode.
 
 ## Data and exposure
 

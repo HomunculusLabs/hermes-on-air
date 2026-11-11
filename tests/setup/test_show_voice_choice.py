@@ -1,5 +1,6 @@
 """The private show's voice answer: false means captions only for that show; it can never turn a voice on."""
 import os
+from types import SimpleNamespace
 
 from onair import setup_engine as se
 from onair import show_runtime as sr
@@ -7,7 +8,8 @@ from test_quick_setup import fresh_engine, owner, wait_done  # noqa: F401  (owne
 
 
 def _saved_stage(owner, tmp_path, tts=None):
-    eng = fresh_engine(owner, model_client=object())  # a model connection that is usable here; never called
+    client = SimpleNamespace(complete=lambda **kw: SimpleNamespace(text="OK"))
+    eng = fresh_engine(owner, model_client=client)  # fixture responds to the show's readiness check
     eng.tts_dispatch = tts
     plan = eng.plan({"channel": "cozy_fox", "use_model": False, "target": os.fspath(tmp_path / "stage")})
     eng.apply(plan["digest"], se.owner_consent(plan["digest"], "dashboard"))

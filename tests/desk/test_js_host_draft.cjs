@@ -18,7 +18,14 @@ async function render(data=valid,online=true,fence=0){ await act(async()=>root.r
 async function type(text){const input=document.querySelector('input');await act(async()=>{setter.call(input,text);input.dispatchEvent(new window.Event('input',{bubbles:true}));});}
 async function click(){await act(async()=>document.querySelector('button').click());}
 (async()=>{
-  await render(); await type('before cut');
+  await render();
+  const detailsLine=document.querySelector('.onair-host-line');
+  assert.deepEqual([...detailsLine.children].map(e=>e.tagName),['H2','LABEL','BUTTON','BUTTON','P','LABEL','P']);
+  assert.equal(detailsLine.querySelector('.onair-field').textContent,'Your line');
+  assert.equal(detailsLine.querySelector('.onair-cut-button').textContent,'Cut in');
+  assert.match(detailsLine.querySelector('.onair-check').textContent,/Keyboard shortcuts/);
+  assert(!detailsLine.querySelector('.onair-mic-more'),'Details retains the full Talk block');
+  await type('before cut');
   await render({...valid,privacy:true},true,1); await render({...valid,epoch:8},true,1);
   assert.equal(document.querySelector('input').value,''); assert.match(document.body.textContent,/re-enter/i);
   await click(); assert.equal(calls.length,0);
@@ -35,8 +42,17 @@ async function click(){await act(async()=>document.querySelector('button').click
   assert.deepEqual(calls.at(-1), {epoch:8,boot:'a'.repeat(32)});
   assert.equal(document.querySelector('input').value, '');
   await act(async()=>window.dispatchEvent(new window.KeyboardEvent('keydown',{key:'c',bubbles:true})));
+  assert.equal(calls.length,6,'C outside Talk must not cut by default');
+  const shortcuts=[...document.querySelectorAll('label')].find(x=>x.textContent.includes('Keyboard shortcuts')).querySelector('input');
+  assert.equal(shortcuts.checked,false);
+  await act(async()=>shortcuts.click());
+  await act(async()=>window.dispatchEvent(new window.KeyboardEvent('keydown',{key:'c',bubbles:true})));
   assert.deepEqual(calls.at(-1), {epoch:8,boot:'a'.repeat(32)});
   assert.equal(calls.length, 7);
+  await act(async()=>shortcuts.click());
+  const talk=document.querySelector('.onair-host-line');
+  await act(async()=>talk.dispatchEvent(new window.KeyboardEvent('keydown',{key:'c',bubbles:true})));
+  assert.equal(calls.length,8,'C works when Talk has focus');
   for(const change of [
     {data:{...valid,epoch:9}}, {data:{...valid,voice_boot:'b'.repeat(32)}}, {data:{...valid,mode:'paused',live:false}},
     {data:{...valid,mode:'off_air',live:false}}, {data:valid,online:false}, {data:valid,fence:2}

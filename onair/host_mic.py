@@ -222,12 +222,13 @@ async def settings(config):
         enabled = await asyncio.to_thread(config.get_config, 'host_mic')
         review = await asyncio.to_thread(mode_state, config)
         cut = await asyncio.to_thread(config.get_config, 'host_cut_in_on_talk')
+        open_enabled = await asyncio.to_thread(config.get_config, 'host_mic_open')
         timeout = await asyncio.to_thread(config.get_config, 'host_mic_timeout_seconds')
         timeout = timeout if type(timeout) is int and 5 <= timeout <= 120 else _STT_TIMEOUT
         return {'ok': True, 'enabled': enabled is True, 'review': review['mode'] == 'review',
-                'cut_in_on_talk': cut is not False, 'timeout_seconds': timeout}
+                'open_enabled': open_enabled is True, 'cut_in_on_talk': cut is not False, 'timeout_seconds': timeout}
     except Exception:
-        return {'ok': True, 'enabled': False, 'review': True, 'cut_in_on_talk': True, 'timeout_seconds': _STT_TIMEOUT}
+        return {'ok': True, 'enabled': False, 'open_enabled': False, 'review': True, 'cut_in_on_talk': True, 'timeout_seconds': _STT_TIMEOUT}
 
 
 async def upload(request, config, forward):
@@ -235,11 +236,15 @@ async def upload(request, config, forward):
     if not options['enabled']:
         return _refuse('disabled', 'Host microphone is disabled.')
     # Reject ambiguity rather than choosing a first value for security bindings.
-    for header in ('content-type', 'content-length', 'x-onair-epoch', 'x-onair-boot', 'x-onair-id', 'x-onair-mode'):
+    for header in ('content-type', 'content-length', 'x-onair-epoch', 'x-onair-boot', 'x-onair-id', 'x-onair-mode', 'x-onair-capture'):
         if len(request.headers.getlist(header)) > 1:
             return _refuse('fields', 'Duplicate microphone headers are not accepted.', 400)
+    capture = request.headers.get('x-onair-capture')
+    if capture is not None and (capture != 'open' or not options['open_enabled']):
+        return _refuse('capture', 'Open microphone capture is not enabled or is invalid.')
+    is_open = capture == 'open'
     requested_mode = request.headers.get('x-onair-mode', 'review')
-    if requested_mode not in ('review', 'send'):
+    if requested_mode not in ('review', 'send') or (is_open and requested_mode != 'send'):
         return _refuse('fields', 'Invalid microphone release mode.')
     content_type = request.headers.get('content-type', '').lower()
     if content_type not in ('audio/wav', 'audio/webm'):
@@ -286,13 +291,13 @@ async def upload(request, config, forward):
             if abandoned.is_set():
                 return 409, {'ok':False, 'reason':'disconnected', 'message':'Recording was discarded.'}
             try:
-                if mode_state(config)['mode'] != 'send':
-                    return 409, {'ok':False, 'reason':'review_required', 'message':'Review is now required; send the transcript yourself.'}
+                if (is_open and (config.get_config('host_mic_open') is not True or config.get_config('host_mic') is not True)) or (not is_open and mode_state(config)['mode'] != 'send'):
+                    return 409, {'ok':False, 'reason':'review_required', 'message':'Direct capture is no longer enabled; send the transcript yourself.'}
             except Exception:
                 return 409, {'ok':False, 'reason':'review_required', 'message':'Review is required; send the transcript yourself.'}
             return forward(method, path, query, body)
         worker = asyncio.create_task(asyncio.to_thread(_process, audio, content_type, int(epoch), ident,
-                                                       options['review'] or requested_mode == 'review', guarded_forward, boot,
+                                                       (not is_open and options['review']) or requested_mode == 'review', guarded_forward, boot,
                                                        options['timeout_seconds']))
         async def watch_disconnect():
             while not worker.done():

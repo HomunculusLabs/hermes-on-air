@@ -52,7 +52,9 @@ const click = async (name) => { const b = button(name); assert(b, 'no button ' +
   const root = createRoot(document.getElementById('root'));
   await act(async () => { root.render(React.createElement(Page)); });
   await flush(80);
-  // First run opens the quick start (same engine as the private agent); the step-by-step wizard is secondary.
+  // Start here is still available from the default Live tab.
+  await act(async () => { document.querySelector('.onair-secondary summary').click(); });
+  await click('Start here');
   assert(text().includes('Start On Air') && button('Set up & preview'), 'first run should open the quick start');
   assert(text().includes('ask your own Hermes agent'), 'quick start names the agent-first path');
   await click('Step-by-step setup instead');
@@ -95,7 +97,7 @@ const click = async (name) => { const b = button(name); assert(b, 'no button ' +
   assert.equal([...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Bring in the next message').length, 1, 'one next-message action');
   assert(!posts.some((p) => /^(approve|reject|privacy|mute|stop|mode)$/.test(p)), 'no real desk control was posted');
 
-  await click('Desk');
+  await click('Details');
   await flush(80);
   assert(text().includes('NOT CONNECTED'));
   assert(button('Open the setup wizard') && button('Try a practice show'), 'unconnected desk offers setup and practice');

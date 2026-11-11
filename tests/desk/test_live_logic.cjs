@@ -1,0 +1,22 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs'), vm = require('node:vm'), path = require('node:path');
+const window = {__HERMES_PLUGIN_SDK__:{React:{createElement(){}}}};
+vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../../dashboard/dist/live.js'),'utf8'),{window,document:{currentScript:null},console});
+const L = window.OnAirLiveLogic;
+const q = [{line_id:'1',epoch:7,turn_id:'one'}, {line_id:'2',epoch:7,turn_id:'one'}, {line_id:'3',epoch:7,turn_id:'two'}];
+assert.equal(L.group(q).length,2);
+assert.equal(L.group([{line_id:'x'}, {line_id:'y'}]).length,1);
+assert.equal(L.context({source:'host'}),'Host turn');
+assert.equal(L.context({source:'beat'}),'Quiet moment');
+assert.equal(L.context({source:'chat',user:'Alice',question:'Hello?'}),'Chat: Alice: Hello?');
+assert.equal(L.shortcut({key:'Enter',target:{tagName:'INPUT'}}),false);
+assert.equal(L.shortcut({key:'a',target:{tagName:'BODY'}}),true);
+assert.equal(L.shortcut({key:'Enter',target:{tagName:'BUTTON'}}),false);
+(async()=>{
+  let calls=[];
+  let r=await L.approveAll(q.slice(0,2),async line=>{calls.push(line.line_id); return line.line_id !== '2';});
+  assert.deepEqual(calls,['1','2']); assert.equal(r,false);
+  calls=[]; r=await L.approveAll(q,async line=>{calls.push(line.line_id); return line.line_id !== '2';});
+  assert.deepEqual(calls,['1','2']); assert.equal(r,false);
+  console.log('live logic passed');
+})().catch(e=>{console.error(e);process.exitCode=1});

@@ -34,9 +34,12 @@ if os.environ.get("ONAIR_HELD_MODEL"):
 
     class HeldModel:
         def __init__(self):
-            self.calls, self.entered, self.release = [], threading.Event(), threading.Event()
+            self.calls, self.probes, self.entered, self.release = [], [], threading.Event(), threading.Event()
 
         def complete(self, messages=None, max_tokens=None, timeout=None, purpose=None, **_kw):
+            if max_tokens == 4:
+                self.probes.append({"purpose": purpose, "max_tokens": max_tokens})
+                return SimpleNamespace(text="OK", provider="fixture-provider", model="held-model")
             self.calls.append({"t": time.time(), "purpose": purpose, "max_tokens": max_tokens,
                                "roles": [m.get("role") for m in messages or []]})
             self.entered.set()
@@ -51,7 +54,7 @@ if os.environ.get("ONAIR_HELD_MODEL"):
         engines = list(_se._ENGINES.values())
         return {"module": _se.__name__, "engines": len(engines),
                 "engines_bound": bool(engines) and all(e.model_client is HELD for e in engines),
-                "calls": HELD.calls, "entered": HELD.entered.is_set(), "released": HELD.release.is_set()}
+                "calls": HELD.calls, "probes": HELD.probes, "entered": HELD.entered.is_set(), "released": HELD.release.is_set()}
 
     @app.post("/fixture/release")
     def held_release():
@@ -73,7 +76,9 @@ if os.environ.get("ONAIR_SHOW_FIXTURE"):
     class ShowModel:
         def complete(self, messages=None, **_kw):
             user = str((messages or [{}])[-1].get("content", ""))
-            if 'beat="opening"' in user:
+            if _kw.get("max_tokens") == 4:
+                text = "OK"
+            elif 'beat="opening"' in user:
                 text = "Hey everyone, I'm Pixel, and today we're wiring a desk lamp that dims when chat goes quiet!"
             elif "<show_note" in user:
                 text = "Soldering tip of the day: tin the tip first and the joint basically makes itself."

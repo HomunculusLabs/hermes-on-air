@@ -11,7 +11,7 @@ from conftest import make
 from onair.presentation import agent
 from onair.presentation.deck import SAMPLE_DECK, validate_deck
 
-EXPECTED_TOOLS = ["onair_present_status", "onair_present_publish", "onair_present_control", "onair_obs_setup",
+EXPECTED_TOOLS = ["onair_work_share", "onair_present_status", "onair_present_publish", "onair_present_control", "onair_obs_setup",
                   "onair_obs_scene", "onair_window_share", "onair_broadcast", "onair_layout"]
 
 
@@ -31,8 +31,8 @@ def get(url, path, host=None):
 
 def test_register_exact_contract_and_nothing_starts(obs):
     ctx, done = make(obs.url)
-    assert done == ["tool:" + n for n in EXPECTED_TOOLS] + ["command:onair-broadcast"]
-    assert list(ctx.tools) == EXPECTED_TOOLS and list(ctx.commands) == ["onair-broadcast"]
+    assert done == ["tool:" + n for n in EXPECTED_TOOLS] + ["command:onair-broadcast", "command:onair-present"]
+    assert list(ctx.tools) == EXPECTED_TOOLS and list(ctx.commands) == ["onair-broadcast", "onair-present"]
     for name, t in ctx.tools.items():
         assert t["toolset"] == "onair_present"
         params = t["schema"]["parameters"]

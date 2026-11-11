@@ -155,12 +155,15 @@ class ControlServer:
             if not isinstance(body, dict):
                 return _err("body must be a JSON object", 400)
             if path == "/cut-in":
-                if (set(body) != {"epoch", "boot"} or type(body.get("epoch")) is not int
+                if (set(body) not in ({"epoch", "boot"}, {"epoch", "boot", "only_if_airing"})
+                        or ("only_if_airing" in body and body["only_if_airing"] is not True)
+                        or type(body.get("epoch")) is not int
                         or not isinstance(body.get("boot"), str) or not re.fullmatch(r"[0-9a-f]{32}", body["boot"])):
                     return _err('body must carry an integer epoch and stage boot id', 400)
                 if body["boot"] != c.voice_boot_id:
                     return Response.json({"ok": False, "reason": "stale_boot"}, 409)
-                return Response.json({"ok": True, "state": c.cut_in(body["epoch"])})
+                state = c.cut_in(body["epoch"], only_if_airing=body.get("only_if_airing") is True)
+                return Response.json({"ok": True, "cut": state["epoch"] != body["epoch"], "state": state})
             if path == "/host/turn" and "boot" in body:
                 boot = body["boot"]
                 if not isinstance(boot, str) or not re.fullmatch(r"[0-9a-f]{32}", boot):

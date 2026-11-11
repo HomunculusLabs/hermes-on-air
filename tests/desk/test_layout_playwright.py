@@ -12,7 +12,7 @@ import subprocess
 import pytest
 
 ROOT = Path(__file__).resolve().parents[2]
-NODE_MODULES = Path.home() / ".hermes" / "hermes-agent" / "node_modules"
+NODE_MODULES = Path(os.environ.get("ONAIR_HERMES_SDK", str(Path.home() / ".hermes" / "hermes-agent"))) / "node_modules"
 
 # Bundling only supplies the host's React SDK. The desk JS and CSS are loaded
 # directly from dashboard/dist; no production layout or component is replaced.
@@ -74,9 +74,13 @@ const esbuild = require('esbuild');
       await page.addStyleTag({path:'dashboard/dist/style.css'});
       await page.addScriptTag({content:bundle.outputFiles[0].text});
       await page.addScriptTag({path:'dashboard/dist/index.js'});
+      await page.getByRole('button', {name:'Details', exact:true}).click();
       await page.waitForFunction(() => document.querySelectorAll('[aria-labelledby="onair-queue"] .onair-line').length === 3 && document.querySelectorAll('[aria-labelledby="onair-guard"] .onair-guard-entry').length > 0);
       await page.waitForTimeout(200);
-      if (await page.locator('.onair-talk-disclosure').count() !== 1 || await page.locator('.onair-talk-disclosure').evaluate(el => el.open)) throw Error('Talk must start collapsed');
+      const talk=page.locator('.onair-talk-disclosure');
+      if (await talk.count() !== 1) throw Error('Talk must be available');
+      const armed=await page.locator('.onair-chip.onair-live').count()>0;
+      if (await talk.evaluate(el => el.open) !== armed) throw Error('Talk starts open only for an armed show');
       // One synchronous read per viewport: no scrolling or individual locator moves.
       snapshots.push(await page.evaluate(() => {
         const rect = el => { const r = el.getBoundingClientRect(); return {left:r.left, top:r.top, right:r.right, bottom:r.bottom, width:r.width, height:r.height}; };
@@ -99,7 +103,7 @@ const esbuild = require('esbuild');
           documentWidth:document.documentElement.scrollWidth, panels,
           header:rect(document.getElementById('onair-guard')),
           list:rect(list), listScrollTop:list.scrollTop, rows:[...list.querySelectorAll('.onair-guard-entry')].map(rect),
-          queue:rect(queue), queueList:rect(queueList), queueRows};
+          queue:rect(queue), talk:rect(document.querySelector('.onair-talk-disclosure')), queueList:rect(queueList), queueRows};
       }));
       // Check the other real panels with Advanced open; closed disclosure content has no visible box.
       await page.locator('.onair-advanced > summary').click();
@@ -146,7 +150,7 @@ def test_latched_panel_contrast():
     node = shutil.which("node")
     if not node:
         pytest.skip("Node is not installed")
-    env = dict(os.environ, NODE_PATH=os.pathsep.join([str(NODE_MODULES), str(Path.home() / "node_modules")]))
+    env = dict(os.environ, NODE_PATH=os.pathsep.join([str(NODE_MODULES), str(Path.home() / "node_modules"), os.environ.get("NODE_PATH", "")]))
     probe = subprocess.run([node, "-e", "for(const m of ['playwright','esbuild','react','react-dom/client']) require.resolve(m)"], cwd=ROOT, env=env, capture_output=True, text=True, timeout=30)
     if probe.returncode:
         pytest.skip("Playwright, esbuild or React Node modules are unavailable")
@@ -220,6 +224,7 @@ def test_desk_layout_regression():
         label = f"{snap['width']}x{snap['height']}"
         assert (snap['scrollX'], snap['scrollY'], snap['listScrollTop']) == (0, 0, 0), label
         assert snap['documentWidth'] <= snap['width'], f"{label}: horizontal overflow: {snap['documentWidth']}"
+        assert abs(snap['talk']['top'] - snap['queue']['top']) <= 1 and snap['talk']['right'] <= snap['queue']['left'], (label, 'Talk must be beside the approval queue', snap['talk'], snap['queue'])
         panels = snap['panels']
         expanded = snap['advancedPanels']
         assert {f"onair-{name}" for name in ("safety", "queue", "guard", "mode", "alerts", "receipts")} <= {panel['name'] for panel in expanded}, label

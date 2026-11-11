@@ -63,7 +63,7 @@ def test_fake_audio_browser_end_to_end(tmp_path, monkeypatch):
     def sdk(): return FileResponse(tmp_path / 'sdk.js', media_type='text/javascript')
     @app.get('/dashboard-plugins/on-air/dist/{name}')
     def asset(name: str):
-        assert name in ('index.js','host-mic.js','style.css')
+        assert name in ('index.js','live.js','live.css','host-mic.js','style.css')
         return FileResponse(ROOT / 'dashboard/dist' / name)
     @app.post('/fixture/auto')
     def auto(): settings['host_mic_review'] = False; return {'ok':True}

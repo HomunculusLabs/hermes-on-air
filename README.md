@@ -4,11 +4,9 @@ On Air is a Hermes plugin for an AI co-host on a live stream. It reads Twitch ch
 co-host replies before captions and optional voice. Your agent can help prepare OBS and a private
 rehearsal while you keep the decisions to arm the show and go live.
 
-![A slide with the co-host's caption across the bottom](docs/img/private-show-captions.png)
+![A stylized mascot in a room with a co-host caption along the bottom](docs/img/private-show-captions.png)
 
-*A private practice show: the slide page your agent published, with the co-host's caption overlay
-on top, the way OBS layers the two browser sources. The image is the two pages composited at
-1920x1080; OBS was not involved.*
+*A synthetic private practice scene showing the mascot and a caption at 1280×720.*
 
 ![The optional code-built mascot in its starter room](docs/img/scene.png)
 
@@ -19,11 +17,13 @@ on top, the way OBS layers the two browser sources. The image is the two pages c
 - Anonymous, read-only Twitch chat; guarded replies with optional owner approval.
 - Captions and optional voice, privacy and mute controls, and a rundown for quiet moments.
 - OBS slides, shared window and three-box views, plus an optional owner-built 3D scene or VRM.
+- [Work view](docs/work-share.md): publish selected code and test output to the existing slides source.
 - [Talk to your co-host](docs/talk.md): type, hold to talk, review and cut in; plus a private, model-backed rehearsal.
 
 ## Quick start: let your agent run it
 
-Install Hermes Agent, then install and enable On Air in your own Hermes home:
+Install Hermes Agent and configure a model provider with `hermes setup` in an interactive terminal,
+then install and enable On Air in your own Hermes home:
 
 ```bash
 hermes plugins install https://github.com/HomunculusLabs/hermes-on-air --enable
@@ -68,12 +68,12 @@ Never paste keys or passwords into chat.
 | Setup | `onair_setup_schema`, `onair_setup_status`, `onair_setup_plan`, `onair_setup_progress`, `onair_setup_cancel` |
 | Private preview and show | `onair_preview_safety`, `onair_show_plan`, `onair_show_status`, `onair_show_chat`, `onair_show_safety` |
 | Real stage | `onair_stage_status`, `onair_stage_plan`, `onair_stage_control`, `onair_stage_host_turn`, `onair_stage_safety` |
-| Presentation | `onair_present_status`, `onair_present_publish`, `onair_present_control` |
+| Presentation | `onair_work_share`, `onair_present_status`, `onair_present_publish`, `onair_present_control` |
 | OBS, layout, window and broadcast | `onair_obs_setup`, `onair_obs_scene`, `onair_window_share`, `onair_broadcast`, `onair_layout` |
 
-The first 15 tools belong to `onair_setup`; the other 8 belong to `onair_present` (23 tools in total). If an
+The first 15 tools belong to `onair_setup`; the other 9 belong to `onair_present` (24 tools in total). If an
 explicit tool list hides them, enable the relevant toolsets with `hermes tools`. The packaged
-skills are listed below. The owner slash commands include `/onair-setup`, `/onair-stage` and
+skills are listed below. The owner slash commands include `/onair-setup`, `/onair-stage`, `/onair-present` and
 `/onair-broadcast`. The CLI has `hermes onair setup`, `scene`, `preflight`, `rehearse`, `status`,
 `host`, `check-line` and `report`. The CLI's manual setup path is documented separately.
 
@@ -120,6 +120,20 @@ surfaces that cannot establish owner identity.
 - Network listeners bind to loopback. Control APIs use bearer tokens; the display pages themselves
   are not token-authenticated. See Disclosure before relying on local isolation.
 
+## What this plugin can reach
+
+- **Network:** Twitch IRC, the selected Hermes model, speech-to-text and text-to-speech providers,
+  optional TypeSafe Jev or loopback Laya, loopback OBS and display/control APIs, and npm for the
+  optional scene scaffold. Hermes installation can contact Git and package services.
+- **Files outside plugin data:** selected stage-home configuration, persona and seed bank; installed
+  plugin and process metadata; an operator-selected new OBS configuration root and scene directory.
+- **Commands:** approved stage setup starts Hermes CLI commands and the stage process; optional
+  development and verification tools start subprocesses. See Processes and jobs below.
+- **Background processes:** an approved stage runs a separate Hermes process; previews, shows and
+  presentation use background threads. Local display pages are not authenticated.
+- **Stored credentials:** Hermes manages model and plugin credentials; On Air stores local control
+  bearer tokens in its plugin data and writes a nonsecret stage sender file during setup.
+
 ## Disclosure
 
 **Network and data sent.** When the real stage is connected, Twitch chat is read over TLS from
@@ -132,7 +146,9 @@ speech-to-text provider, which may be cloud-hosted; see [Talk](docs/talk.md). OB
 loopback HTTP endpoint (default `http://127.0.0.1:8390`); Jev uses
 `https://api.typesafe.ai/v1/systemone`. Assistance receives the guarded draft and triggering
 public chat, and may receive the public show policy; it advises only, never releases a line.
-Plugin installation and Hermes dependency preparation can contact Git and package services.
+The optional scene scaffolder downloads pinned, SHA-256-checked three.js and three-vrm archives
+from `registry.npmjs.org`. Plugin installation and Hermes dependency preparation can contact Git
+and package services.
 
 **Listeners.** All On Air listeners bind `127.0.0.1`, not the LAN:
 
@@ -168,13 +184,17 @@ operator-selected OBS configuration root, not an existing one. Hermes and OBS ma
 configuration and data. The plugin reads configured seed-bank files, stage configuration and
 persona, installed plugin files and process metadata for readiness and stop verification.
 
-The adapter and preflight use Hermes scoped secrets where available, with environment fallback.
-Presentation reads `ONAIR_OBS_PASSWORD` directly from the process environment at call time;
-other `ONAIR_*` settings and `HERMES_HOME` are read from settings or environment. The dashboard
-wizard directly reads the selected marked stage home's `.env` to check `ONAIR_ALLOWED_USERS`;
-it does not use the Hermes secret API for that check. No direct `auth.json` read was found in
-plugin runtime code. Model credentials belong to Hermes, not On Air's setup plans. On Air has no
-telemetry or self-update mechanism.
+On Air reads `ONAIR_OBS_PASSWORD` and `ONAIR_JEV_API_KEY` at call time through Hermes
+`agent.secret_scope.get_secret`; if that API is unavailable, they are treated as empty. Hermes
+may use the process environment in single-profile operation, but refuses an unscoped read under
+multiplexing. Other `ONAIR_*` settings and `HERMES_HOME` can come from settings or environment.
+To check the sender allow-list for a marked stage, the dashboard asks Hermes to build the selected
+profile's scoped values; Hermes may read that profile's `.env` and configured secret sources.
+The runtime does not parse `.env` itself. It writes the nonsecret stage sender `.env` during approved
+setup and checks for an installation project `.env` without reading its contents. The standalone
+developer install verifier reads and hashes the `.env` in its own disposable synthetic stage home;
+it does not use the owner's stage home. Model credentials belong to Hermes, not On Air's setup plans.
+On Air has no telemetry or self-update mechanism.
 
 ## Limitations (by design)
 
@@ -230,8 +250,9 @@ Hermes for this runtime. See [compatibility](docs/compatibility.md) for exact te
 ## Development
 
 ```bash
-# Pure-Python suite; tests that need the Hermes runtime skip themselves:
-uvx --with pytest --with pyyaml --with websockets --with ruamel.yaml pytest -q -p no:cacheprovider
+# Development dependencies; some integration tests also need a Hermes runtime on PYTHONPATH.
+# A dependency-only environment is not sufficient for the complete suite:
+uvx --with pytest --with pyyaml --with websockets --with ruamel.yaml --with fastapi --with httpx pytest -q -p no:cacheprovider
 hermes plugins validate .
 hermes onair rehearse        # once installed: the gate, guard and stage controller, offline
 ```

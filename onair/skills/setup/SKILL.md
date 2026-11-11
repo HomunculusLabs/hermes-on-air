@@ -13,7 +13,7 @@ this, never read or copy `.env`, `auth.json` or any key, and never ask the user 
 |---|---|
 | `onair_setup_schema` | read-only contract: answers, public style fields, presets, examples, states |
 | `onair_setup_status` | read-only sanitized facts: saved stage + its style, model connection LABEL, job, preview, `missing` |
-| `onair_setup_plan` | read-only: builds the exact plan (effects + approval code). Changes nothing |
+| `onair_setup_plan` | validates and returns effects + approval code; model choice may make one short paid liveness call before approval |
 | `onair_setup_progress` | read-only: the job's real steps, details, errors and next action; preview facts |
 | `onair_setup_cancel` | safety: cancel a running setup (its changes are undone) and stop the preview |
 | `onair_preview_safety` | safety: `pause` (privacy cut) or `stop` the PRIVATE preview |
@@ -21,7 +21,11 @@ this, never read or copy `.env`, `auth.json` or any key, and never ask the user 
 | `onair_stage_plan` | read-only: plan starting/restarting the REAL stage (effects + approval code), or the exact missing prerequisites |
 | `onair_stage_safety` | safety on the REAL stage this setup started: `off_air` or `stop` (ok only when no process of its session remains and its announced endpoints are closed; otherwise NOT confirmed: stop again) |
 
-If these tools are missing from your tool list, the plugin is not enabled in this home or the user saved
+If these tools are missing immediately after `hermes plugins install ... --enable`, ask the user to start a
+new Hermes session: the tools are offered from the next session. If a gateway was already running and the
+new session cannot reach the model, ask the user to restart that gateway and ask again.
+
+If the tools are still missing in the new session, the plugin may not be enabled in this home or the user saved
 an explicit tool list without `onair_setup`: tell the user to enable the plugin or add `onair_setup` in
 `hermes tools`. Never work around it with shell commands. The tools answer only in the user's own local
 Hermes (CLI, TUI, desktop app); in a messaging chat they refuse, because the chat cannot prove who the
@@ -34,6 +38,10 @@ owner is. Say so and point the user to their local Hermes or the On Air dashboar
   Relay those steps themselves when the user asks what is left. `agent_can_do: true` steps (preflight,
   gateway) are the approved real-stage start below; the others say `why_not_here` (plugin manager install,
   the user's own model key in the stage's `hermes model`): relay that reason, never present it as skipped.
+- Model status is `ready` only after a successful call for this client and runtime context in this
+  process, `untested` when a client exists but has not succeeded there, and `unavailable` when it
+  cannot be used or its last check failed. `usable_here` is true only for `ready`. Relay the returned
+  `next_action` for a refusal; never claim an untested connection works.
 - After a failed stage start, read `onair_stage_status` for the refusal and fix its cause before issuing a new code.
 - Real stage (the public co-host): once `onair_stage_status` says `startable: true`, call
   `onair_stage_plan`, show the effects, and let the USER type `/onair-setup stage approve <code>` (plus the
@@ -58,10 +66,12 @@ owner is. Say so and point the user to their local Hermes or the On Air dashboar
 - `onair_setup_schema` → `style.enforcement` says which choices are hard limits (pacing, avoid-topics) and
   which are only instructions to the model (tone, persona, topics, reply length on the real stage).
 
-1. Call `onair_setup_status` (and `onair_setup_schema` once, to know the style fields).
+1. If the setup tools are not offered, follow the new-session instructions above; otherwise call
+   `onair_setup_status` (and `onair_setup_schema` once, to know the style fields).
 2. Ask ONLY what is missing (`missing` / `questions`): usually the Twitch channel name, and whether
-   to use their configured model connection for the test reply (one short request on their provider
-   account) or a canned stand-in. Do not invent other questions.
+   to use their configured model connection for the test reply or a canned stand-in. Explain before
+   choosing the model that planning can make one tiny paid connection test before approval, followed
+   by one short request for the preview if approved. Do not invent other questions.
 3. Turn what the user says about the co-host into a style patch with the schema's fields, presets
    and examples: "keep it relaxed and reply less often" -> `{"tone": "relaxed", "reply_pacing":
    "less_often"}`. Persona, topics and avoid-topics are PUBLIC: never put the user's private notes,

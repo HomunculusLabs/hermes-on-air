@@ -37,6 +37,8 @@ const click = async name => { const b = [...document.querySelectorAll('button')]
   const root = createRoot(document.getElementById('root'));
   await act(async () => root.render(React.createElement(Page)));
   await wait(100);
+  await act(async () => { document.querySelector('.onair-secondary summary').click(); });
+  await click('Start here');
   const field = document.querySelector('input[name="channel"]') || document.querySelector('#onair-qs-channel');
   assert(field, 'channel input');
   await act(async () => { Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set.call(field, 'sample'); field.dispatchEvent(new window.Event('input', { bubbles: true })); });

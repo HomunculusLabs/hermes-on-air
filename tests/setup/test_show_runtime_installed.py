@@ -75,7 +75,9 @@ class LoopbackModel(BaseHTTPRequestHandler):
         user = next((m.get("content") for m in reversed(msgs) if m.get("role") == "user"), "")
         system = next((m.get("content") for m in msgs if m.get("role") == "system"), "")
         PROMPTS.append({"user": user, "system_has_persona": "Pixel" in str(system), "tools": bool(req.get("tools"))})
-        if "<show_note" in str(user) and "opening" in str(user):
+        if user == "Reply OK.":
+            reply = "OK"
+        elif "<show_note" in str(user) and "opening" in str(user):
             reply = "Hey everyone, I am Pixel and today we are wiring a desk lamp that dims when chat goes quiet!"
         elif "<show_note" in str(user):
             reply = "Quick soldering thought: tin the tip first and the joint basically makes itself."
@@ -83,6 +85,8 @@ class LoopbackModel(BaseHTTPRequestHandler):
             reply = "Great question! The lamp listens to chat and fades a little every quiet minute."
         else:
             reply = ""
+        if user != "Reply OK.":
+            time.sleep(0.3)  # fixture makes the observable thinking state long enough to sample
         self._json({"id": "c1", "object": "chat.completion", "created": 1, "model": "fixture-model",
                     "choices": [{"index": 0, "message": {"role": "assistant", "content": reply}, "finish_reason": "stop"}],
                     "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}})
@@ -107,9 +111,10 @@ se = importlib.import_module(pkg + ".setup_engine")
 sr = importlib.import_module(pkg + ".show_runtime")
 sa = importlib.import_module(pkg + ".setup_agent")
 out["tools"] = sorted(n for n in sa.SCHEMAS if registry.get_entry(n) is not None)
-_mc = getattr(se._MODEL_CLIENT, "_inner", se._MODEL_CLIENT)  # integration: show requests use the onair_show slot
+wrapped = se.engine().model_client
+_mc = getattr(wrapped, "_inner", wrapped)  # integration: show requests use the onair_show slot
 out["model_client"] = type(_mc).__module__ + "." + type(_mc).__name__
-out["model_client_wrapper"] = type(se._MODEL_CLIENT).__name__
+out["model_client_wrapper"] = type(wrapped).__name__
 out["tts_dispatch"] = getattr(se._TTS_DISPATCH, "__qualname__", repr(se._TTS_DISPATCH))
 # no genuine owner session here: the registered tool handler must refuse (never a fabricated owner)
 out["tool_without_session"] = json.loads(registry.get_entry("onair_show_plan").handler({}))
@@ -257,7 +262,9 @@ def test_private_show_runs_through_installed_plugin_real_llm_and_tts_on_py314(tm
     assert {"thinking", "speaking", "listening"} <= set(out["activities_seen"]), out["activities_seen"]
     assert out["stop"]["ok"] and out["after_stop"] == "paused", out["stop"]
     assert out["resume"]["ok"] and out["after_resume"] == "autonomous" and out["after_end"] is False
-    prompts = out["prompts"]
+    probes = [p for p in out["prompts"] if p["user"] == "Reply OK."]
+    assert probes and all(not p["tools"] and not p["system_has_persona"] for p in probes), probes
+    prompts = [p for p in out["prompts"] if p["user"] != "Reply OK."]
     assert prompts and all(p["system_has_persona"] and not p["tools"] for p in prompts), prompts
     assert any("<show_note" in p["user"] for p in prompts) and any("<live_chat" in p["user"] for p in prompts)
     assert not out["refused"], out["refused"]

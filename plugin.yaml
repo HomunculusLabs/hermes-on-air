@@ -19,7 +19,7 @@ requires_hermes: ">=0.22.7"
 provides_hooks: [pre_llm_call, post_llm_call, on_session_end]
 provides_middleware: [llm_execution]
 # The private-agent setup entry (owner homes only; a stage home registers none of these).
-provides_tools: [onair_setup_schema, onair_setup_status, onair_setup_plan, onair_setup_progress, onair_setup_cancel, onair_preview_safety, onair_stage_status, onair_stage_plan, onair_stage_control, onair_stage_host_turn, onair_stage_safety, onair_show_plan, onair_show_status, onair_show_chat, onair_show_safety, onair_present_status, onair_present_publish, onair_present_control, onair_obs_setup, onair_obs_scene, onair_window_share, onair_broadcast, onair_layout]
+provides_tools: [onair_setup_schema, onair_setup_status, onair_setup_plan, onair_setup_progress, onair_setup_cancel, onair_preview_safety, onair_stage_status, onair_stage_plan, onair_stage_control, onair_stage_host_turn, onair_stage_safety, onair_show_plan, onair_show_status, onair_show_chat, onair_show_safety, onair_work_share, onair_present_status, onair_present_publish, onair_present_control, onair_obs_setup, onair_obs_scene, onair_window_share, onair_broadcast, onair_layout]
 optional_env:
   - name: ONAIR_TWITCH_CHANNEL
     description: "Twitch channel to read chat from (read-only, anonymous)"
@@ -55,9 +55,10 @@ config_schema:
   host_turns: {type: bool, default: false, description: "Allow owner host lines on the real stage"}
   host_relay_settle_seconds: {type: int, default: 20, description: "Relay settling window after privacy or re-arming (5 to 120 seconds)"}
   host_mic: {type: bool, default: false, description: "Allow push-to-talk host microphone in the desk"}
+  host_mic_open: {type: bool, default: false, description: "Allow owner-activated open microphone with direct transcripts"}
   host_mic_timeout_seconds: {type: int, default: 20, description: "Dashboard profile speech-to-text timeout in seconds (5 to 120)"}
-  host_mic_review: {type: bool, default: true, description: "Require review of microphone transcripts and lock the desk mode choice"}
-  host_cut_in_on_talk: {type: bool, default: true, description: "Cut an airing co-host line when the owner starts push-to-talk"}
+  host_mic_review: {type: bool, default: true, description: "Require hold-to-talk transcript review; Open mic has its own separate setting"}
+  host_cut_in_on_talk: {type: bool, default: true, description: "Cut an airing co-host line when the owner speaks"}
   host_relay_autonomous: {type: bool, default: false, description: "Allow host relays in autonomous mode without owner approval"}
   dead_air_seconds: {type: int, default: 45, description: "Quiet seconds before a content beat"}
   model_failure_pause_after: {type: int, default: 3, description: "Consecutive model failures before pausing turns"}
@@ -65,4 +66,4 @@ config_schema:
   public_style: {type: dict, default: {}, description: "The co-host's public style chosen in On Air setup (persona line, tone, topics, avoid_topics, reply_length); also written to the stage SOUL.md"}
   alerts: {type: dict, default: {enabled: true, thank_you: true, include_messages: false, min_bits: 1, during_privacy: drop}, description: "Support alerts: subs, gifted subs, bits and raids (overlay alert plus one guarded thank-you)"}
   semantic_assist: {type: dict, default: {provider: "off", endpoint: "http://127.0.0.1:8390", timeout_s: 3, show_policy: "", min_confidence: 0.6}, description: "Optional shadow-only advice beside queued lines: provider off (default), laya (loopback guardrail service) or jev (needs ONAIR_JEV_API_KEY). Advice never approves or airs anything."}
-  presentation: {type: dict, default: {}, description: "Presentation and OBS output: obs_url, present_port, overlay_url/overlay_port (default: the running private show's own captions+voice page), approved_scenes, owned scene/input names"}
+  presentation: {type: dict, default: {}, description: "Presentation, text-only work view, and OBS output: obs_url, present_port, overlay_url/overlay_port (default: the running private show's own captions+voice page), approved_scenes, owned scene/input names; image sharing is not supported"}

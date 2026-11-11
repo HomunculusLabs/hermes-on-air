@@ -3,11 +3,15 @@
 You need Hermes 0.22.7 or newer using its Python 3.14 runtime, a configured model for a real
 private show, and OBS if you want to preview the composition. See [compatibility](compatibility.md).
 
-1. Install and enable the plugin in your owner Hermes home:
+1. In an interactive terminal, run `hermes setup` to configure a model provider for your owner
+   home, if you have not already. Keep credentials out of chat. Install and enable the plugin:
 
    ```sh
    hermes plugins install https://github.com/HomunculusLabs/hermes-on-air --enable
    ```
+
+   Start a new Hermes session after installation: plugin tools are offered from the next session.
+   If a gateway was already running, restart that gateway if the new session cannot reach the model.
 
 2. Open your local Hermes agent. Say: “Set me up to stream. Rehearse privately first.”
    Give it your Twitch channel, public co-host style, public show topic and whether you want
@@ -26,3 +30,19 @@ private show, and OBS if you want to preview the composition. See [compatibility
 
 Optional: `hermes onair rehearse` is a synthetic offline test with canned chat and no model,
 Twitch or voice. It is not the private model show or a live-readiness check.
+
+### Model connection checks
+
+Status reports `untested` when a client exists but has not successfully answered in this process
+and runtime context, `ready` after it has, and `unavailable` when no client is available or its
+last check failed. `usable_here` is true only for `ready`; a past success does not guarantee the
+next request will succeed. Status itself does not call the model.
+
+If you choose the model for setup, planning makes at most one tiny connection test when the
+connection is not ready, before issuing an approval code or creating a stage folder; your provider
+may charge for it. A successful check is cached for that client and runtime context in this process.
+The approved preview makes its own request. A private show plan also checks an untested connection.
+If planning and approval run in different processes or runtime contexts, the approving process must
+check again. Hermes may retry or route requests according to its own provider policy. A timed-out
+check can still be finishing in the host; On Air does not launch another for that client and runtime
+context while the check is in flight.

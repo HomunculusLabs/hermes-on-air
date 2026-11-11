@@ -17,6 +17,7 @@ const assert=require('node:assert/strict');
     const page=await browser.newPage({viewport:{width:1280,height:900}});
     const errors=[]; page.on('pageerror',e=>errors.push(String(e)));
     await page.goto(process.env.ONAIR_MIC_URL);
+    await page.getByRole('button',{name:'Details',exact:true}).click();
     await page.locator('.onair-talk-disclosure > summary').click();
     const panel=page.locator('[aria-label="Host line"]');
     const button=panel.getByRole('button',{name:'Hold to talk'});

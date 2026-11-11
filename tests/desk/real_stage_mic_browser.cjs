@@ -17,6 +17,7 @@ const assert=require('node:assert/strict');
     const width=Number(process.env.ONAIR_MIC_WIDTH), page=await browser.newPage({viewport:{width,height:900}});
     const errors=[];page.on('pageerror',e=>errors.push(String(e)));
     await page.goto(process.env.ONAIR_MIC_URL);
+    await page.getByRole('button',{name:'Details',exact:true}).click();
     await page.locator('.onair-talk-disclosure > summary').waitFor({timeout:15000});
     const readable = await page.evaluate(() => {
       const text=document.querySelector('.onair-talk-disclosure > summary');
@@ -29,7 +30,7 @@ const assert=require('node:assert/strict');
       const a=lum(fg),b=lum(bg); return (Math.max(a,b)+.05)/(Math.min(a,b)+.05);
     });
     assert(readable>=4.5,`Talk disclosure contrast ${readable}`);
-    await page.locator('.onair-talk-disclosure > summary').click();
+    if (!await page.locator('.onair-talk-disclosure').evaluate(el=>el.open)) await page.locator('.onair-talk-disclosure > summary').click();
     const panel=page.locator('[aria-label="Host line"]');
     const hold=panel.locator('.onair-host-mic button');
     await hold.waitFor({timeout:15000});

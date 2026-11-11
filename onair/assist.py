@@ -338,22 +338,31 @@ class JevProvider:
 
     name = "jev"
 
-    def __init__(self, key: str | None, *, model: str = "jev-1.14.0", timeout_s: float = DEFAULT_TIMEOUT_S,
+    def __init__(self, key: str | Callable[[], str | None] | None, *, model: str = "jev-1.14.0", timeout_s: float = DEFAULT_TIMEOUT_S,
                  min_confidence: float = DEFAULT_MIN_CONFIDENCE, transport: Transport | None = None):
         if not isinstance(model, str) or not model or len(model) > 64 or not all(c.isalnum() or c in "._-" for c in model):
             raise AssistConfigError("jev model id must be letters, digits, '.', '_' or '-'")
         self.model = model
         self.timeout_s = timeout_s
         self.min_confidence = min_confidence
-        self._key = key if isinstance(key, str) and 16 <= len(key) <= 512 and not any(c.isspace() for c in key) else None
-        self.key_present = self._key is not None
+        self._key_source = key
+        self._transport = transport
         self.endpoint = f"https://{JEV_HOST}{JEV_PATH}"
-        if transport is not None:
-            self.transport = transport
-        elif self._key is not None:
-            self.transport = http_transport(JEV_HOST, 443, https=True, headers={"Authorization": "Bearer " + self._key})
-        else:
-            self.transport = None
+
+    def _key(self) -> str | None:
+        key = self._key_source() if callable(self._key_source) else self._key_source
+        return key if isinstance(key, str) and 16 <= len(key) <= 512 and not any(c.isspace() for c in key) else None
+
+    @property
+    def key_present(self) -> bool:
+        return self._key() is not None
+
+    @property
+    def transport(self) -> Transport | None:
+        if self._transport is not None:
+            return self._transport
+        key = self._key()
+        return http_transport(JEV_HOST, 443, https=True, headers={"Authorization": "Bearer " + key}) if key else None
 
     def health(self, timeout: float) -> dict:
         # No harmless Jev probe exists that costs nothing, so the test is local only.
@@ -377,13 +386,14 @@ class JevProvider:
         }
 
     def decide(self, req: AssistRequest, deadline: float) -> Decision:
-        if self.transport is None:
+        transport = self.transport
+        if transport is None:
             return review(self.name, "unavailable", f"no Jev key ({JEV_KEY_ENV} unset); not contacted")
         t0 = time.monotonic()
         rem = deadline - time.monotonic()
         if rem <= 0:
             raise TimeoutError
-        status, body = self.transport("POST", JEV_PATH, self.request_body(req), rem)
+        status, body = transport("POST", JEV_PATH, self.request_body(req), rem)
         ms = (time.monotonic() - t0) * 1000.0
         if status in (401, 403):
             return review(self.name, "unavailable", "Jev refused the key (HTTP %d)" % status, ms)
@@ -421,7 +431,7 @@ class AssistRunner:
     ``review`` decision. Built from operator settings only."""
 
     def __init__(self, provider: str = "off", *, endpoint: str = "", timeout_s: Any = DEFAULT_TIMEOUT_S,
-                 policy: str = "", jev_key: str | None = None, jev_model: str = "jev-1.14.0",
+                 policy: str = "", jev_key: str | Callable[[], str | None] | None = None, jev_model: str = "jev-1.14.0",
                  min_confidence: Any = DEFAULT_MIN_CONFIDENCE, transport: Transport | None = None,
                  demo: bool = False):
         self.provider_name = provider if provider in PROVIDERS else "off"
@@ -546,7 +556,7 @@ class AssistRunner:
         return d
 
 
-def runner_from_settings(raw: Any, *, jev_key: str | None = None, transport: Transport | None = None) -> AssistRunner:
+def runner_from_settings(raw: Any, *, jev_key: str | Callable[[], str | None] | None = None, transport: Transport | None = None) -> AssistRunner:
     """``semantic_assist`` plugin setting (a mapping) -> runner. Missing/invalid -> off."""
     if not isinstance(raw, dict):
         return AssistRunner("off")

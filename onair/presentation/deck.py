@@ -133,6 +133,9 @@ class Program:
     def __init__(self) -> None:
         self._lock = threading.Lock()
         self._deck: dict | None = None
+        self._work: dict | None = None
+        # A work view is hidden until a trusted overlay state says it is live and not private.
+        self._work_visible = False
         self._mode = "standby"
         self._index = 0
         self._standby = {"title": "We'll be right back", "note": ""}
@@ -181,6 +184,32 @@ class Program:
             self._bump()
             return True, ""
 
+    def work_action(self, args: dict) -> tuple[bool, dict]:
+        from .work import apply
+        with self._lock:
+            if args.get("action") == "clear":
+                if set(args) != {"action"}:
+                    return False, {"action": "give only action for clear"}
+                self._work = None
+                self._mode = "slides" if self._deck else "standby"
+            else:
+                candidate, errors = apply(self._work, args)
+                if errors:
+                    return False, errors
+                self._work = candidate
+                self._mode = "work"
+            self._bump()
+            return True, {"revision": self.revision}
+
+    def work_visibility(self, visible: bool) -> bool:
+        """Fail closed on overlay disconnect, malformed state, off-air or privacy."""
+        with self._lock:
+            if self._work_visible == visible:
+                return False
+            self._work_visible = visible
+            self._bump()
+            return True
+
     def public(self) -> dict:
         """The PUBLIC snapshot sent to the page: only the current slide, never the whole deck."""
         with self._lock:
@@ -188,7 +217,9 @@ class Program:
             count = len(self._deck["slides"]) if self._deck else 0
             if self._mode == "slides" and self._deck:
                 slide = copy.deepcopy(self._deck["slides"][self._index])
-            return {"type": "program", "revision": self.revision, "mode": self._mode,
+            mode = "privacy" if self._mode == "work" and not self._work_visible else self._mode
+            return {"type": "program", "revision": self.revision, "mode": mode,
+                    "work": copy.deepcopy(self._work) if mode == "work" else None,
                     "index": self._index if self._deck else None, "count": count,
                     "deck_title": self._deck["title"] if self._deck else "",
                     "slide": slide, "standby": dict(self._standby) if self._mode == "standby" else None}

@@ -128,14 +128,21 @@ class _NotRunning:
 
 
 def _env_value(home: Path, name: str) -> str | None:
+    # Ask Hermes to build the selected profile's scope; never parse its files here.
     try:
-        for line in (home / ".env").read_text(encoding="utf-8").splitlines():
-            key, sep, value = line.partition("=")
-            if sep and key.strip() == name:
-                return value.strip()
-    except OSError:
+        from agent.secret_scope import (build_profile_secret_scope, set_secret_scope, reset_secret_scope,
+                                        set_multiplex_context, reset_multiplex_context)
+        from .secrets import get
+        values = build_profile_secret_scope(home)
+        multi = set_multiplex_context(True)
+        token = set_secret_scope(values, profile_home=str(home))
+        try:
+            return get(name)
+        finally:
+            reset_secret_scope(token)
+            reset_multiplex_context(multi)
+    except ImportError:
         return None
-    return None
 
 
 def readiness(raw_home: str) -> dict:

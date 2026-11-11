@@ -47,11 +47,8 @@ def _section(obj: Mapping, key: str) -> Mapping:
 
 
 def _scoped(name: str) -> str | None:
-    try:
-        from agent.secret_scope import get_secret
-    except ImportError:
-        return os.environ.get(name)
-    return get_secret(name)
+    from .secrets import get
+    return get(name)
 
 
 _RUNTIME_KEYS = ('openai_runtime', 'api_mode')

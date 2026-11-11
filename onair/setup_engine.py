@@ -4,8 +4,8 @@ Both entries call the same four operations and see the same persisted state:
 
 - ``status()``  sanitized facts only (names and states; never a key, token, URL credential or file
   content from the user's own Hermes home);
-- ``plan(answers)``  validates the answers and returns the exact effects, the owned target and a
-  digest over both. Nothing is changed;
+- ``plan(answers)``  validates answers, tests a requested model if untested, and returns the exact
+  effects, the owned target and a digest over both. It never creates the stage folder;
 - ``apply(digest, consent)``  runs the plan in one background job: create the private stage
   folder, optionally test the configured model connection by drafting ONE reply, start a private
   preview and read everything back. ``consent`` must be an :class:`OwnerConsent` for that exact
@@ -24,8 +24,10 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import hashlib
 import json
+import logging
 import os
 import re
 import secrets
@@ -37,6 +39,8 @@ from typing import Any, Callable
 SCHEMA = 1
 CONSENT_TTL_S = 600.0
 MODEL_TIMEOUT_S = 20.0
+MODEL_PROBE_TIMEOUT_S = 5.0
+logger = logging.getLogger(__name__)
 TEST_USER = "you_setup_test"
 TEST_MESSAGE = "hi! is this thing on?"
 _LABEL = re.compile(r"[A-Za-z0-9._:/@+ -]{1,80}\Z")
@@ -60,6 +64,114 @@ class SetupError(Exception):
 MODEL_REJECTED_429 = ("The model provider rejected the request (HTTP 429). Check model access or limits in "
                       "Hermes; no preview reply was generated.")
 MODEL_FAILED = "The model call failed. No preview reply was generated."
+MODEL_UNAVAILABLE = ("This session cannot reach your model. Start a new Hermes session (or restart the gateway "
+                     "that loaded the plugin) and ask again.")
+
+# Readiness is process-local and attached to the actual host facade, not a persisted plan.  The
+# routing wrapper is recreated on every lookup, so key it by its inner host facade instead.
+# The context is part of the route: Hermes resolves runtime and profile via ContextVars.
+_PROBES: list[dict] = []
+_PROBES_LOCK = threading.Lock()
+
+
+def _client_identity(client: Any) -> Any:
+    from .adapter import _ShowModel
+    return client._inner if isinstance(client, _ShowModel) else client
+
+
+def _probe_home() -> str:
+    try:
+        from hermes_constants import get_hermes_home
+        return os.fspath(get_hermes_home().resolve())
+    except ImportError:
+        return os.fspath(owner_home().resolve())
+
+
+def _find_probe(client: Any, context: contextvars.Context) -> dict | None:
+    identity, home = _client_identity(client), _probe_home()
+    return next((r for r in _PROBES if r["client"] is identity and r["home"] == home
+                 and r["context"] == context), None)
+
+
+def _model_state(client: Any) -> str:
+    if client is None:
+        return "unavailable"
+    context = contextvars.copy_context()
+    with _PROBES_LOCK:
+        record = _find_probe(client, context)
+        return record["state"] if record else "untested"
+
+
+def _log_model_failure(step: str, exc: BaseException, started: float) -> None:
+    code = _status_code(exc)
+    logger.debug("model failure step=%s category=%s status=%s elapsed_ms=%d", step,
+                 type(exc).__name__, code if code is not None and 100 <= code <= 599 else "none",
+                 int((time.monotonic() - started) * 1000))
+
+
+def _invalidate_client(client: Any) -> None:
+    identity = _client_identity(client)
+    with _PROBES_LOCK:
+        for record in _PROBES:
+            if record["client"] is identity:
+                record["state"], record["error"] = "unavailable", MODEL_UNAVAILABLE
+
+
+def _probe_model(client: Any) -> str:
+    """One bounded readiness request; a timed-out worker is never duplicated while in flight."""
+    if client is None:
+        logger.debug("model failure step=plan category=ClientUnavailable status=none elapsed_ms=0")
+        return MODEL_UNAVAILABLE
+    context = contextvars.copy_context()
+    with _PROBES_LOCK:
+        record = _find_probe(client, context)
+        if record and record["state"] == "ready":
+            return ""
+        if not record or record["done"].is_set():
+            # Do not accumulate unbounded client references; never evict an in-flight probe.
+            if record:
+                _PROBES.remove(record)
+            while len(_PROBES) >= 64:
+                old = next((r for r in _PROBES if r["done"].is_set()), None)
+                if old is None:
+                    logger.debug("model failure step=plan category=ProbeCapacity status=none elapsed_ms=0")
+                    return MODEL_UNAVAILABLE
+                _PROBES.remove(old)
+            record = {"client": _client_identity(client), "home": _probe_home(), "context": context.copy(),
+                      "state": "untested", "done": threading.Event(), "error": ""}
+            _PROBES.append(record)
+
+            def run() -> None:
+                started = time.monotonic()
+                try:
+                    result = client.complete(messages=[{"role": "user", "content": "Reply OK."}],
+                                             max_tokens=4, timeout=MODEL_PROBE_TIMEOUT_S,
+                                             purpose="onair.setup-preview")
+                    if not (getattr(result, "text", "") or "").strip():
+                        raise _EmptyModelResponse()
+                except Exception as exc:  # noqa: BLE001 - never include provider exception text
+                    _log_model_failure("plan", exc, started)
+                    error = MODEL_REJECTED_429 if _status_code(exc) == 429 else MODEL_UNAVAILABLE
+                else:
+                    error = ""
+                with _PROBES_LOCK:
+                    if record["state"] != "unavailable":  # a timeout is not reversed by a late answer
+                        record["state"] = "unavailable" if error else "ready"
+                        record["error"] = error
+                    record["done"].set()
+
+            threading.Thread(target=context.run, args=(run,), name="onair-model-probe", daemon=True).start()
+    if not record["done"].wait(MODEL_PROBE_TIMEOUT_S):
+        with _PROBES_LOCK:
+            if not record["done"].is_set():
+                record["state"], record["error"] = "unavailable", MODEL_UNAVAILABLE
+                logger.debug("model failure step=plan category=TimeoutError status=none elapsed_ms=%d",
+                             int(MODEL_PROBE_TIMEOUT_S * 1000))
+    return record["error"]
+
+
+class _EmptyModelResponse(Exception):
+    pass
 
 
 def _status_code(exc: BaseException) -> int | None:
@@ -100,7 +212,11 @@ def owner_consent(digest: str, source: str) -> OwnerConsent:
 
 
 def owner_home() -> Path:
-    return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
+    try:
+        from hermes_constants import get_hermes_home
+        return Path(get_hermes_home())
+    except ImportError:
+        return Path(os.environ.get("HERMES_HOME") or Path.home() / ".hermes")
 
 
 def is_stage_home(home: Path | None = None) -> bool:
@@ -128,15 +244,14 @@ def model_connection(model_client: Any) -> dict:
     parts = [p for p in (provider, name) if isinstance(p, str) and _LABEL.fullmatch(p.strip())]
     label = " · ".join(p.strip() for p in parts)
     if not label:
-        return {"configured": False, "label": "", "usable_here": False,
+        return {"configured": False, "label": "", "usable_here": False, "state": "unavailable",
                 "next_action": ("No model connection is set up in Hermes yet. Set one up with Hermes's own "
                                 "model setup (hermes model); it asks for any key itself. On Air never asks "
                                 "for keys. Until then the preview uses a canned stand-in reply.")}
-    usable = model_client is not None
-    return {"configured": True, "label": label, "usable_here": usable,
-            "next_action": "" if usable else (
-                "This page cannot reach your model connection. Ask your Hermes agent to set up On Air "
-                "to test it from chat, or continue with the canned stand-in reply.")}
+    state = _model_state(model_client)
+    return {"configured": True, "label": label, "usable_here": state == "ready", "state": state,
+            "next_action": "" if state == "ready" else (MODEL_UNAVAILABLE if state == "unavailable" else
+                "The model connection is untested here. Ask your Hermes agent to plan setup and test it.")}
 
 
 # ---- the engine ---------------------------------------------------------------------------------
@@ -145,7 +260,7 @@ class SetupEngine:
                  step_hook: Callable[[str], None] | None = None):
         self.home = Path(home or owner_home())
         self.dir = self.home / "plugin-data" / "on-air" / "setup"
-        self.model_client = model_client
+        self._model_client_factory: Callable[[], Any] = lambda: model_client
         self.tts_dispatch: Any = _TTS_DISPATCH  # ctx.dispatch_tool: Hermes's configured text_to_speech
         self.step_hook = step_hook  # tests: block/interrupt between steps
         self._lock = threading.RLock()
@@ -153,6 +268,19 @@ class SetupEngine:
         self._cancel = threading.Event()
         self.preview: Any = None
         self._draining: list = []  # stopped shows whose model request is still finishing
+
+    @property
+    def model_client(self) -> Any:
+        started = time.monotonic()
+        try:
+            return self._model_client_factory()
+        except Exception as exc:  # noqa: BLE001 - host facade resolution is a model failure
+            _log_model_failure("resolve", exc, started)
+            return None
+
+    @model_client.setter
+    def model_client(self, client: Any) -> None:
+        self._model_client_factory = lambda: client
 
     # -- persisted state
     def _path(self, name: str) -> Path:
@@ -298,7 +426,8 @@ class SetupEngine:
         saved = self._read("saved.json")
         resume = bool(not clean.get("channel") and saved and isinstance(saved.get("home"), str)
                       and is_stage_home(Path(saved["home"])))
-        connection = model_connection(self.model_client)
+        client = self.model_client
+        connection = model_connection(client)
         missing = []
         before = None
         if resume:
@@ -336,12 +465,21 @@ class SetupEngine:
                 return {"ok": False, "errors": errors, "missing": missing}
             channel, agent = options.channel, options.agent_name
             clean.update(channel=channel, host_name=options.host_name, agent_name=agent, target=target)
-        if use_model is None and connection["configured"] and connection["usable_here"]:
+        if use_model is None and connection["configured"] and client is not None:
             missing.append("use_model")
         if missing:
             return {"ok": False, "missing": missing, "errors": {}, "questions": [_QUESTIONS[m] for m in missing],
                     "model_connection": connection}
-        use = bool(use_model) and connection["configured"] and connection["usable_here"]
+        if use_model:
+            if not connection["configured"]:
+                return {"ok": False, "error": connection["next_action"], "next_action": connection["next_action"],
+                        "model_connection": connection}
+            error = _probe_model(client)
+            connection = model_connection(client)
+            if error:
+                return {"ok": False, "error": error, "next_action": error,
+                        "model_connection": connection}
+        use = bool(use_model)
         effects = []
         if kind == "create":
             effects.append(f"Create a new private stage folder {target} for a public co-host called {agent}. "
@@ -360,7 +498,8 @@ class SetupEngine:
                            "The private preview restarts with it.")
         if use:
             effects.append(f"Use your configured model connection ({connection['label']}) for ONE short request: "
-                           "draft a reply to the private test message. Your provider counts it as normal usage. "
+                           "draft a reply to the private test message. Planning may already have made one short "
+                           "connection test; your provider counts both as normal usage. "
                            "Hermes keeps the key; On Air never sees it.")
         else:
             effects.append("Draft the test reply with a canned stand-in (no model is used).")
@@ -432,7 +571,8 @@ class SetupEngine:
                 published.wait()
                 if ready[0]:
                     self._run(job, stored["body"])
-            self._thread = threading.Thread(target=run_after_publish,
+            job_context = contextvars.copy_context()
+            self._thread = threading.Thread(target=job_context.run, args=(run_after_publish,),
                                             name="onair-setup-" + self._job_id, daemon=True)
             self._thread.start()
             try:
@@ -647,9 +787,15 @@ class SetupEngine:
         settings = (((config.get("plugins") or {}).get("entries") or {}).get("on-air") or {}).get("settings") or {}
         persona = (home / "SOUL.md").read_text(encoding="utf-8")
         from . import style as st
+        client_started = time.monotonic()
+        client = self.model_client if body["use_model"] else None
+        if body["use_model"] and client is None:
+            logger.debug("model failure step=preview category=ClientUnavailable status=none elapsed_ms=%d",
+                         int((time.monotonic() - client_started) * 1000))
+            raise _ModelDraftError(MODEL_UNAVAILABLE)
         show = PreviewShow(name="onair-setup-preview-" + job["id"], settings=settings, persona=persona,
                            style=st.read_style(home),
-                           model_client=self.model_client if body["use_model"] else None,
+                           model_client=client,
                            facts_path=self._path("preview-facts.json"))
         show.start()
         self.preview = show
@@ -665,6 +811,7 @@ class SetupEngine:
         # (a routed Stop from another engine copy or process), not on some later status read.
         threading.Thread(target=self._watch_release, args=(show,), name="onair-setup-release-" + job["id"],
                          daemon=True).start()
+        started = time.monotonic()
         show.send_test_message()
         deadline = time.monotonic() + MODEL_TIMEOUT_S + 5
         while time.monotonic() < deadline and not self._cancelled(job):
@@ -679,6 +826,8 @@ class SetupEngine:
             if facts["draft_error"]:
                 raise _ModelDraftError(facts["draft_error"], rejected_429=facts["draft_error"] == MODEL_REJECTED_429)
             if not facts["pending"]:
+                _log_model_failure("preview", TimeoutError(), started)
+                _invalidate_client(client)
                 raise _ModelDraftError("The model did not answer in time.")
             self._step(job, "model", "done", f"Your model connection ({body['model_label']}) drafted a reply.")
         if not facts["pending"]:
@@ -1024,10 +1173,10 @@ def schema() -> dict:
                         "host_name": "streamer's public name (default Host)",
                         "agent_name": "public co-host name (default Co-host)",
                         "use_model": "the USER's own yes/no: draft the test reply with their configured model "
-                                     "connection (one short provider request)",
+                                     "connection (a short paid test at planning, then one request if approved)",
                         "style": "a patch of public style fields (see style.schema)"},
             "style": st.describe(),
-            "actions": {"status": "read-only", "plan": "read-only; returns effects + approval code",
+            "actions": {"status": "read-only", "plan": "returns effects + approval code; may make one paid model test",
                         "apply": "owner approval only (dashboard click or /onair-setup approve <code> + host card)",
                         "progress": "read-only", "cancel": "safety, always allowed",
                         "preview_pause": "safety, always allowed", "preview_stop": "safety, always allowed",
@@ -1076,7 +1225,7 @@ def _off_air(show: Any) -> bool:
 _QUESTIONS = {
     "channel": {"key": "channel", "question": "Which Twitch channel should the co-host read? (name only, no #)"},
     "use_model": {"key": "use_model", "question": "Use your configured model connection to draft the test "
-                  "reply (one short request on your provider account), or a canned stand-in?",
+                  "reply (a short paid connection test during planning, then one request if approved), or a canned stand-in?",
                   "choices": [True, False]},
 }
 
@@ -1156,7 +1305,8 @@ class PreviewShow(PracticeShow):
 
     def start(self) -> None:  # no scripted practice message
         import threading as _t
-        self.thread = _t.Thread(target=self._thread_main, name=self.name, daemon=True)
+        context = contextvars.copy_context()
+        self.thread = _t.Thread(target=context.run, args=(self._thread_main,), name=self.name, daemon=True)
         self.thread.start()
         if not self._ready.wait(10) or self._error is not None:
             self.close()
@@ -1181,7 +1331,8 @@ class PreviewShow(PracticeShow):
             if self.model_client is None:
                 reply = f"Hello from {agent}, and this is a canned setup-test reply rather than the model"
             else:
-                reply = await asyncio.get_running_loop().run_in_executor(None, self._draft, text)
+                context = contextvars.copy_context()
+                reply = await asyncio.get_running_loop().run_in_executor(None, context.run, self._draft, text)
             if reply:
                 controller.deliver_reply(turn.turn_id, reply)
             controller.turn_done(turn.turn_id, "setup_preview")
@@ -1221,6 +1372,7 @@ class PreviewShow(PracticeShow):
                 self.drafting -= 1
 
     def _draft_once(self, text: str) -> str:
+        started = time.monotonic()
         try:
             result = self.model_client.complete(
                 messages=[{"role": "system", "content": self.persona},
@@ -1231,8 +1383,13 @@ class PreviewShow(PracticeShow):
                                                                  getattr(result, "model", "")) if x)
         except Exception as exc:  # noqa: BLE001 - SDK failure does not establish provider outage
             # Never the exception text (keys, URLs, response bodies); never a fallback reply or a retry.
+            _log_model_failure("preview", exc, started)
+            _invalidate_client(self.model_client)
             self.draft_error = MODEL_REJECTED_429 if _status_code(exc) == 429 else MODEL_FAILED
             return ""
+        if not reply:
+            _log_model_failure("preview", _EmptyModelResponse(), started)
+            _invalidate_client(self.model_client)
         self.draft_error = "" if reply else "The model call returned no preview reply."
         return reply
 
@@ -1304,7 +1461,7 @@ class PreviewShow(PracticeShow):
 # ---- one engine per Hermes home per process -----------------------------------------------------
 _ENGINES: dict[str, SetupEngine] = {}
 _ENGINES_LOCK = threading.Lock()
-_MODEL_CLIENT: Any = None
+_MODEL_CLIENT_FACTORIES: dict[str, Callable[[], Any]] = {}
 _TTS_DISPATCH: Any = None
 
 
@@ -1316,17 +1473,25 @@ def set_tts_dispatch(dispatch: Any) -> None:
         engine.tts_dispatch = dispatch
 
 
+def set_model_client_factory(factory: Callable[[], Any]) -> None:
+    """Resolve this profile's host facade when a job or show needs it."""
+    key = os.fspath(owner_home().resolve())
+    with _ENGINES_LOCK:
+        _MODEL_CLIENT_FACTORIES[key] = factory
+        if key in _ENGINES:
+            _ENGINES[key]._model_client_factory = factory
+
+
 def set_model_client(client: Any) -> None:
-    """The plugin's ``ctx.llm`` (host-owned credentials); None where no plugin context exists."""
-    global _MODEL_CLIENT
-    _MODEL_CLIENT = client
-    for engine in _ENGINES.values():
-        engine.model_client = client
+    """Install a fixed client for contexts without a live plugin facade (including tests)."""
+    set_model_client_factory(lambda: client)
 
 
 def engine(home: Path | None = None) -> SetupEngine:
     key = os.fspath(Path(home or owner_home()).resolve())
     with _ENGINES_LOCK:
         if key not in _ENGINES:
-            _ENGINES[key] = SetupEngine(Path(key), model_client=_MODEL_CLIENT)
+            item = SetupEngine(Path(key))
+            item._model_client_factory = _MODEL_CLIENT_FACTORIES.get(key, lambda: None)
+            _ENGINES[key] = item
         return _ENGINES[key]

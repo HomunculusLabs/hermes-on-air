@@ -8,6 +8,12 @@ description: Use when arranging stream views. Check OBS readback.
 1. Call `onair_present_status`, `onair_obs_setup` `inspect`, and `onair_layout` `boxes`.
    Unknown or unreachable OBS is not a successful change. Publish slides with
    `onair_present_publish`; call `onair_obs_setup` `configure` and inspect again.
+   For “share what you are working on in the small box”, use `onair_work_share` `show` with
+   one or two brief public panes, then `onair_layout` `put` the slides source in the requested
+   sub. Share the relevant function or failing test output, not an environment dump. Update the
+   view as work progresses, then clear it. This is a page the agent writes to, not screen capture.
+   Work is blank during privacy, off air, or if the configured overlay cannot prove safe state.
+   Check the intended show and OBS preview; see docs/work-share.md.
 2. Main, Sub 1 and Sub 2 hold Scene, Slides, or one owner-selected Window. Subs may be empty;
    Main cannot. Moving a source moves it out of its old box. The overlay is above the boxes.
    Use these exact examples as needed:

@@ -33,6 +33,7 @@ const root=createRoot(document.getElementById('root'));
 const settle=()=>new Promise(r=>setTimeout(r,40));
 (async()=>{
   await act(async()=>{root.render(React.createElement(Page));await settle()});
+  await act(async()=>{[...document.querySelectorAll('.onair-tab')].find(b=>b.textContent==='Details').click();await settle()});
   const panel=document.querySelector('[aria-labelledby="onair-views"]');
   assert(panel && panel.textContent.includes('Main') && panel.textContent.includes('Sub 2'));
   assert(panel.textContent.includes('Choose and confirm a window.'));

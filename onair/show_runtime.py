@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import hashlib
 import http.client
 import json
@@ -206,7 +207,8 @@ class AgentShow(PracticeShow):
             self.last_error = f"This show used its {MAX_REQUESTS} model requests; press End and start a new show."
             controller.turn_done(turn.turn_id, "request_cap")
             return
-        reply = await asyncio.get_running_loop().run_in_executor(None, self._complete, prompt)
+        context = contextvars.copy_context()
+        reply = await asyncio.get_running_loop().run_in_executor(None, context.run, self._complete, prompt)
         dispositions = controller.deliver_reply(turn.turn_id, reply) if reply else []
         controller.turn_done(turn.turn_id, "show_model" if reply else "show_model_silent")
         if turn.kind == "chat":
@@ -221,6 +223,7 @@ class AgentShow(PracticeShow):
         with self._lock:
             self.drafting += 1
             self.requests += 1
+        started = time.monotonic()
         try:
             result = self.model_client.complete(
                 messages=[{"role": "system", "content": self.persona + "\n\n" + SHOW_HINT},
@@ -229,9 +232,14 @@ class AgentShow(PracticeShow):
             self.attribution = " · ".join(str(x) for x in (getattr(result, "provider", ""),
                                                           getattr(result, "model", "")) if x)
             reply = (getattr(result, "text", "") or "").strip()
+            if not reply:
+                se._log_model_failure("show", se._EmptyModelResponse(), started)
+                se._invalidate_client(self.model_client)
             self.last_error = "" if reply else "The model call returned no reply. The show keeps listening."
             return reply
-        except Exception:  # noqa: BLE001 - the SDK does not identify the cause reliably
+        except Exception as exc:  # noqa: BLE001 - the SDK does not identify the cause reliably
+            se._log_model_failure("show", exc, started)
+            se._invalidate_client(self.model_client)
             self.model_errors += 1
             self.last_error = "The model call failed. The show keeps listening."
             return ""
@@ -467,7 +475,7 @@ def show_model_next_action(model: dict) -> str:
 
 
 def plan(eng: se.SetupEngine, answers: Any, *, remember: bool = True) -> dict:
-    """Read-only: the exact private show this would start, or the exact missing prerequisite."""
+    """Plan the private show; a not-yet-ready model may require one short paid test."""
     from . import style as st
     if not isinstance(answers, dict):
         return {"ok": False, "errors": {"form": "answers must be an object"}}
@@ -496,12 +504,17 @@ def plan(eng: se.SetupEngine, answers: Any, *, remember: bool = True) -> dict:
         return {"ok": False, "errors": {"brief": f"brief is public text of at most {MAX_BRIEF} characters."}}
     style = st.read_style(home)
     brief = _clean(raw, MAX_BRIEF) or _clean(style.get("persona") or "", MAX_BRIEF)
-    model = se.model_connection(eng.model_client)
+    client = eng.model_client
+    model = se.model_connection(client)
+    probe_error = ""
+    if model["configured"] and client is not None and not model["usable_here"]:
+        probe_error = se._probe_model(client)
+        model = se.model_connection(client)
     if not (model["configured"] and model["usable_here"]):
         return {"ok": False, "missing": ["model"], "model_connection": model,
-                "error": ("The show needs your configured model connection, and it is not reachable here. "
-                          "Nothing was started and no canned stand-in is used."),
-                "next_action": show_model_next_action(model)}
+                "error": probe_error or ("The show needs your configured model connection, and it is not reachable here. "
+                                         "Nothing was started and no canned stand-in is used."),
+                "next_action": probe_error if probe_error else show_model_next_action(model)}
     voice = tts_connection(eng.tts_dispatch)
     if answers.get("voice") is False:  # the owner's choice for this show; it can only turn the voice off
         voice = {"usable_here": False, "label": "", "off_by_choice": True,
@@ -570,7 +583,8 @@ def start(eng: se.SetupEngine, digest: Any, consent: Any, code: Any = None) -> d
         show = AgentShow(body=body, persona=persona, model_client=eng.model_client, tts_dispatch=eng.tts_dispatch,
                          data_dir=eng.dir)
         try:
-            show.thread = threading.Thread(target=show._thread_main, name="onair-show", daemon=True)
+            context = contextvars.copy_context()
+            show.thread = threading.Thread(target=context.run, args=(show._thread_main,), name="onair-show", daemon=True)
             show.thread.start()
             if not show._ready.wait(10) or show._error is not None:
                 show.close()

@@ -3,8 +3,8 @@
 One clean subprocess per home, run with the prepared Hermes 3.14 interpreter (ruamel.yaml, no PyYAML),
 loads a drop-in copy of the plugin through the real Hermes loader (``discover_plugins``) and checks:
 
-* an owner home registers the setup/show tools, the eight presentation tools (incl. ``onair_layout``),
-  ``/onair-setup`` and ``/onair-broadcast``, and every ``provides_tools`` entry of plugin.yaml is actually registered;
+* an owner home registers the setup/show tools, the nine presentation tools (incl. ``onair_work_share``),
+  ``/onair-setup``, ``/onair-present`` and ``/onair-broadcast``, and every ``provides_tools`` entry of plugin.yaml is actually registered;
 * the ``on-air:setup`` and ``on-air:produce`` skills are registered by the plugin and the host's own skill
   viewer serves ``on-air:produce`` with exactly the source file's bytes;
 * ``presentation.teardown`` is wired to the host's real unload (``on_unload``): unloading closes the page port;
@@ -66,7 +66,7 @@ from ruamel.yaml import YAML
 manifest = YAML(typ="safe").load((home / "plugins" / "on-air" / "plugin.yaml").read_text())
 out["manifest_tools"] = manifest["provides_tools"]
 out["registered"] = sorted(n for n in manifest["provides_tools"] if registry.get_entry(n) is not None)
-out["present_tools"] = sorted(n for n in registry.get_all_tool_names() if n.startswith(("onair_present", "onair_obs", "onair_window", "onair_broadcast", "onair_layout"))) \
+out["present_tools"] = sorted(n for n in registry.get_all_tool_names() if n.startswith(("onair_present", "onair_work_share", "onair_obs", "onair_window", "onair_broadcast", "onair_layout"))) \
     if hasattr(registry, "get_all_tool_names") else None
 out["skills"] = mgr.list_plugin_skills("on-air")
 import hashlib
@@ -162,7 +162,7 @@ def _run(tmp_path: Path, kind: str) -> dict:
     return json.loads(lines[-1][len("RESULT "):])
 
 
-PRESENT = {"onair_present_status", "onair_present_publish", "onair_present_control", "onair_obs_setup",
+PRESENT = {"onair_work_share", "onair_present_status", "onair_present_publish", "onair_present_control", "onair_obs_setup",
            "onair_obs_scene", "onair_window_share", "onair_broadcast", "onair_layout"}
 
 
@@ -187,7 +187,7 @@ def test_owner_home_registers_the_whole_join_and_unload_tears_down(tmp_path, _sk
     produce_src = hashlib.sha256((ROOT / "onair" / "skills" / "produce" / "SKILL.md").read_bytes()).hexdigest()
     assert out["produce_sha"] == produce_src and out["produce_in_install"] is True, out
     assert out["produce_view_ok"] is True, out
-    assert {"onair-setup", "onair-broadcast"} <= set(out["commands"]), out["commands"]
+    assert {"onair-setup", "onair-broadcast", "onair-present"} <= set(out["commands"]), out["commands"]
     assert out["aux_tasks"] == ["onair_show"], out  # the show's own model slot (reasoning effort is configurable)
     assert out["voice_status"]["usable_here"] is True, out["voice_status"]  # registered dispatcher, voice enabled
     assert out["no_session"].get("ok") is False and out["wrapped_no_session"].get("ok") is False, out

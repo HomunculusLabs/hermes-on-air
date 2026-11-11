@@ -35,8 +35,11 @@ class _ModelHandler(http.server.BaseHTTPRequestHandler):
 
     def do_POST(self):  # noqa: N802
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
-        type(self).seen.append(body)
-        text = {"ok": "Yes, it's on! Welcome to the stream.", "empty": "",
+        if body.get("max_tokens") == 4:
+            type(self).probes.append(body)
+        else:
+            type(self).seen.append(body)
+        text = "OK" if body.get("max_tokens") == 4 else {"ok": "Yes, it's on! Welcome to the stream.", "empty": "",
                 "unsafe": "Sure, go to http://example.invalid/free and type your password there."}[type(self).mode]
         data = json.dumps({"text": text}).encode()
         self.send_response(200)
@@ -53,11 +56,14 @@ class LoopbackFixtureModel:
     """FIXTURE stand-in for ``ctx.llm``: same ``complete`` call shape, answered by a loopback server."""
 
     def __init__(self, port: int):
-        self.port, self.calls = port, 0
+        self.port, self.calls, self.probe_calls = port, 0, 0
 
     def complete(self, messages, **kw):
         import http.client
-        self.calls += 1
+        if kw.get("max_tokens") == 4:
+            self.probe_calls += 1
+        else:
+            self.calls += 1
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=kw.get("timeout") or 5)
         conn.request("POST", "/complete", json.dumps({"messages": messages, "kw": sorted(kw),
                                                       "max_tokens": kw.get("max_tokens")}),
@@ -69,7 +75,7 @@ class LoopbackFixtureModel:
 
 @pytest.fixture
 def model_server():
-    handler = type("H", (_ModelHandler,), {"seen": [], "mode": "ok"})
+    handler = type("H", (_ModelHandler,), {"seen": [], "probes": [], "mode": "ok"})
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -144,7 +150,8 @@ def test_set_up_and_preview_end_to_end(owner, tmp_path):
     eng = fresh_engine(owner)
     status = eng.status()
     assert status["model_connection"] == {"configured": True, "label": "fixture-provider · fixture-model",
-                                          "usable_here": False, "next_action": status["model_connection"]["next_action"]}
+                                          "usable_here": False, "state": "unavailable",
+                                          "next_action": status["model_connection"]["next_action"]}
     assert status["missing"] == ["channel"] and status["saved_stage"] is None
     target = os.fspath(tmp_path / "stage")
     plan = eng.plan({"channel": "cozy_fox", "target": target})
@@ -302,7 +309,7 @@ def test_model_connection_opt_in_drafts_with_public_persona_only(owner, tmp_path
     assert off["uses_model"] is False and model.calls == 0
     plan = eng.plan({"channel": "cozy_fox", "use_model": True, "target": os.fspath(tmp_path / "s")})
     assert plan["uses_model"] and any("fixture-provider · fixture-model" in e and "usage" in e for e in plan["effects"])
-    assert model.calls == 0  # planning never uses the model
+    assert model.calls == 0 and model.probe_calls == 1 and len(handler.probes) == 1
     eng.apply(plan["digest"], se.owner_consent(plan["digest"], "dashboard"))
     job = wait_done(eng)
     assert job["state"] == "done", job
@@ -323,12 +330,22 @@ def test_silent_unsafe_or_lost_model_fails_with_one_next_action(owner, tmp_path,
     server, handler = model_server
     handler.mode = "ok" if mode == "lost" else mode
     model = LoopbackFixtureModel(server.server_address[1])
-    if mode == "lost":
-        server.shutdown()
-        server.server_close()  # connection loss: nothing listens any more
+    entered, release = threading.Event(), threading.Event()
     eng = fresh_engine(owner, model_client=model)
+    if mode == "lost":
+        def hold_model_step(key):
+            if key == "model":
+                entered.set()
+                release.wait(10)
+        eng.step_hook = hold_model_step
     plan = eng.plan({"channel": "cozy_fox", "use_model": True, "target": os.fspath(tmp_path / "s")})
+    assert plan["ok"] and model.probe_calls == 1
     eng.apply(plan["digest"], se.owner_consent(plan["digest"], "dashboard"))
+    if mode == "lost":
+        assert entered.wait(10)
+        server.shutdown()
+        server.server_close()  # connection lost after a successful probe
+        release.set()
     job = wait_done(eng)
     if mode == "unsafe":
         # RECORDED FINDING (not a preview weakening): the preview runs the stage's own default guard

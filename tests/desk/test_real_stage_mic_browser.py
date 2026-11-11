@@ -75,7 +75,7 @@ def test_real_stage_synthetic_talk_journey(tmp_path, monkeypatch, width):
     def sdk(): return FileResponse(tmp_path / 'sdk.js', media_type='text/javascript')
     @app.get('/dashboard-plugins/on-air/dist/{name}')
     def asset(name: str):
-        assert name in ('index.js','host-mic.js','style.css')
+        assert name in ('index.js','live.js','live.css','host-mic.js','style.css')
         return FileResponse(ROOT / 'dashboard/dist' / name)
     @app.get('/fixture/status')
     async def status():

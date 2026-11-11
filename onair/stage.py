@@ -460,6 +460,7 @@ class StageController:
         self._assist_tasks: dict[str, asyncio.Task] = {}
         self._air_q: asyncio.Queue[PendingLine] = asyncio.Queue()
         self._airing: PendingLine | None = None
+        self._audible = False  # True only while an aired line's caption/voice is out
         self._clips: dict[str, Clip] = {}
         self._interrupt = asyncio.Event()
         self._armed_at = 0.0
@@ -1568,13 +1569,19 @@ class StageController:
         self.receipts.write("control", action="stop", epoch=self.state.epoch, mode=self.state.mode)
         return self.snapshot()
 
-    def cut_in(self, epoch: Any) -> dict:
-        """Owner cut: fence old work and clear output without changing the mode."""
+    def cut_in(self, epoch: Any, *, only_if_airing: bool = False) -> dict:
+        """Owner cut: fence old work, optionally only while a line is audibly airing.
+
+        ``only_if_airing`` is the talk-over cut: it acts only once the line's caption and
+        voice have been published, so speaking while a reply is still being prepared never
+        discards it."""
         if type(epoch) is not int:
             raise ControlError("epoch must be an integer", 400)
         if epoch != self.state.epoch or self.state.privacy or self.state.mode not in LIVE_MODES:
             raise ControlError("stage changed or is not accepting a cut-in", 409)
         airing = self._airing.line_id if self._airing else None
+        if only_if_airing and (airing is None or not self._audible):
+            return self.snapshot()
         self._bump_epoch("cut_in")
         self.hub.publish(ev_caption_clear(), urgent=True)
         if airing is not None:
@@ -1704,7 +1711,11 @@ class StageController:
         now = self.clock()
         self.state.last_spoke_at = now
         self.receipts.write("aired", line_id=line.line_id, caption_id=caption_id, clip=bool(clip_id), text=line.text)
-        await self._sleep_interruptible(ttl / 1000.0)
+        self._audible = True
+        try:
+            await self._sleep_interruptible(ttl / 1000.0)
+        finally:
+            self._audible = False
         self.state.last_spoke_at = self.clock()
         return True
 
@@ -1720,6 +1731,7 @@ class StageController:
                 logger.exception("on-air airing error")
             finally:
                 self._airing = None
+                self._audible = False
 
     async def _tick_loop(self) -> None:
         while True:

@@ -109,6 +109,7 @@ function assertNothingLive(label) {
 (async () => {
   // 1. Fresh desk, no show: a setup guide with existing commands, not just "unavailable".
   await act(async () => { root.render(React.createElement(Page)); await settle(); });
+  await act(async () => { [...document.querySelectorAll('.onair-tab')].find(b => b.textContent === 'Details').click(); await settle(); });
   assert(connect(), 'setup guide shown when no show answers');
   assert.equal(connect().querySelector('h2').textContent, 'Connect this desk to a show');
   assert(chips().includes('NOT CONNECTED'), chips());

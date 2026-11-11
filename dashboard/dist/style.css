@@ -181,7 +181,16 @@ li.onair-skipped .onair-tag { border-color: #e9b45f; color: #e9b45f; }
 .onair-app > .onair-wizard, .onair-app > .onair-practice, .onair-app > .onair-help-tab { max-width: 60rem; margin: 1rem auto; }
 .onair-app > .onair-practice { max-width: 90rem; padding: 0 1.25rem; }
 .onair-app > .onair-wizard, .onair-app > .onair-help-tab { margin-left: max(1.25rem, calc((100% - 60rem) / 2)); margin-right: max(1.25rem, calc((100% - 60rem) / 2)); }
-.onair-tabs { display: flex; gap: .5rem; overflow-x: auto; padding: .75rem 1.25rem 0; max-width: 90rem; margin: 0 auto; }
+.onair-tabs { display: flex; align-items:center; gap: .5rem; overflow: visible; padding: .75rem 1.25rem 0; max-width: 90rem; margin: 0 auto; }
+.onair-secondary {position:relative;margin-left:auto;flex:none}
+.onair-secondary summary {display:flex;align-items:center;min-height:44px;padding:.55rem .7rem;cursor:pointer;white-space:nowrap;list-style:none;color:var(--color-muted-foreground,#bac7c4)}
+.onair-secondary summary::-webkit-details-marker {display:none}
+.onair-secondary summary::after {content:'⌄';margin-left:.4rem}
+.onair-secondary-current {font-weight:700;color:var(--color-foreground,var(--foreground-base,#fff))!important}
+.onair-secondary-items {display:none;position:absolute;z-index:30;top:100%;right:0;min-width:12rem;padding:.35rem;background:var(--color-background,var(--background,#101918));border:1px solid var(--color-border,#899);border-radius:.45rem;box-shadow:0 6px 24px #0005}
+.onair-secondary[open] .onair-secondary-items {display:flex;flex-direction:column}
+.onair-app .onair-secondary-items button {width:100%;text-align:left;background:transparent;border:0}
+.onair-app .onair-secondary-items button:hover,.onair-app .onair-secondary-items button[aria-current=page] {background:var(--color-secondary,#30433f)}
 .onair-app button, .onair-app input, .onair-app textarea { font: inherit; }
 .onair-app button { min-height: 44px; max-width: 100%; padding: .55rem .9rem; border: 1px solid var(--color-border, #899); border-radius: .4rem; background: var(--color-secondary, #30433f); color: var(--color-secondary-foreground, #fff); cursor: pointer; }
 .onair-app button:disabled { opacity: .55; cursor: not-allowed; }
@@ -285,6 +294,25 @@ li.onair-skipped .onair-tag { border-color: #e9b45f; color: #e9b45f; }
 .onair-views-disclosure > summary { cursor: pointer; min-height: 44px; padding: .7rem; }
 .onair-views { min-width: 0; }
 .onair-talk-disclosure { grid-area: host; min-width: 0; }
+@media (min-width: 701px) {
+  .onair-desk.onair-has-talk {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr) minmax(0, 1fr);
+    grid-template-areas: "privacy privacy privacy" "header header header" "plain plain plain" "notice notice notice" "safety safety safety" "host queue guard" "mode mode mode" "views views views" "advanced advanced advanced";
+  }
+  .onair-has-talk .onair-panel[aria-labelledby="onair-queue"] p { margin-top: .1rem; margin-bottom: .1rem; }
+  .onair-has-talk .onair-panel[aria-labelledby="onair-queue"] h2 { margin: 0 0 .35rem; }
+  .onair-has-talk .onair-panel[aria-labelledby="onair-queue"] .onair-line-source,
+  .onair-has-talk .onair-panel[aria-labelledby="onair-queue"] .onair-selection-hint { margin: 0; line-height: 1.15; }
+  .onair-has-talk .onair-panel[aria-labelledby="onair-queue"] .onair-line { margin-top: .1rem; }
+  .onair-has-talk .onair-panel[aria-labelledby="onair-queue"] .onair-line-text { margin: 0; line-height: 1.25; }
+  .onair-has-talk .onair-safety-actions p { margin: .25rem 0 0; }
+}
+@media (min-width: 701px) and (max-width: 1100px) {
+  .onair-desk.onair-has-talk { grid-template-columns: repeat(2, minmax(0, 1fr)); grid-template-areas: "privacy privacy" "header header" "plain plain" "notice notice" "safety safety" "host queue" "mode guard" "views views" "advanced advanced"; }
+}
+@media (max-width: 700px) {
+  .onair-desk.onair-has-talk { grid-template-areas: "privacy" "header" "plain" "notice" "safety" "host" "queue" "guard" "mode" "views" "advanced"; }
+}
 .onair-talk-disclosure > summary { cursor: pointer; min-height: 44px; padding: .7rem; }
 .onair-host-line { min-width: 0; }
 .onair-host-line .onair-field { display: block; }

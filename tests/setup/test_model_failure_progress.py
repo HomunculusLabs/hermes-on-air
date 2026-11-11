@@ -50,10 +50,13 @@ class FixtureModel:
     """FIXTURE for ``ctx.llm``: raises the given error (or answers) in-process; counts every call."""
 
     def __init__(self, error=None, gate=None):
-        self.error, self.gate, self.calls = error, gate, 0
+        self.error, self.gate, self.calls, self.probe_calls = error, gate, 0, 0
         self.entered = threading.Event()
 
     def complete(self, messages, **kw):
+        if kw.get("max_tokens") == 4:
+            self.probe_calls += 1
+            return SimpleNamespace(text="OK", provider="fixture-provider", model="fixture-model")
         self.calls += 1
         self.entered.set()
         if self.gate is not None:
@@ -104,6 +107,7 @@ def _run_model_job(eng, tmp_path, **answers):
     plan = eng.plan({"channel": "cozy_fox", "use_model": True, "target": os.fspath(tmp_path / "stage"),
                      **answers})
     assert plan["ok"], plan
+    assert eng.model_client.probe_calls == 1  # the subsequent draft still exercises the original failure
     eng.apply(plan["digest"], se.owner_consent(plan["digest"], "dashboard"))
     return plan, wait_done(eng)
 

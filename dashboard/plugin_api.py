@@ -108,7 +108,8 @@ async def _proxy(request: Request, path: str):
                     raise ValueError('duplicate fields')
                 return value
             fields = json.loads(body, object_pairs_hook=unique_object)
-            if not isinstance(fields, dict) or set(fields) != {'epoch', 'boot'}:
+            if (not isinstance(fields, dict) or set(fields) not in ({'epoch', 'boot'}, {'epoch', 'boot', 'only_if_airing'})
+                    or ('only_if_airing' in fields and fields['only_if_airing'] is not True)):
                 raise ValueError('invalid fields')
             if (type(fields['epoch']) is not int or not isinstance(fields['boot'], str)
                     or not re.fullmatch(r'[0-9a-f]{32}', fields['boot'])):
@@ -196,9 +197,12 @@ async def proxy(request: Request):
 # separate ObsControl: it cannot confer or revoke a confirmation held in the owner process.
 class _ViewsConfig:
     def get_config(self, key):
+        from collections.abc import Mapping
         from hermes_cli.config import load_config_readonly
-        from hermes_cli.plugins_state import _plugin_settings_entry
-        entry = _plugin_settings_entry(load_config_readonly(), 'on-air') or {}
+        entry = load_config_readonly()
+        for part in ('plugins', 'entries', 'on-air'):
+            entry = entry.get(part) if isinstance(entry, Mapping) else None
+        entry = entry if isinstance(entry, Mapping) else {}
         for section in ('settings', 'config'):
             values = entry.get(section)
             if isinstance(values, dict) and key in values:
@@ -223,7 +227,7 @@ def _views_controller():
 
 
 def _views_sanitize(payload):
-    secret = os.environ.get('ONAIR_OBS_PASSWORD', '')
+    secret = _onair('secrets').get('ONAIR_OBS_PASSWORD')
     return _redact(payload, secret) if secret else payload
 
 

@@ -8,8 +8,9 @@ Authority is read from the host, not from the model:
 - every handler asks the plugin context for the calling session's surface (``ctx.session_surface``)
   and refuses when it is the On Air platform, when no session can be established, or when this
   Hermes home is a stage home;
-- the tools are read-only (status, plan, progress) plus the two safety actions (cancel, stop the
-  preview). No tool can apply a plan, test the model or start anything, and none reads an
+- the tools report status, plan and progress and offer two safety actions (cancel, stop the
+  preview). Planning an explicitly requested model preview may make one short paid liveness request.
+  No tool can apply a plan or start anything, and none reads an
   ``approved``/``caller`` argument (their schemas allow no extra properties);
 - applying needs the human to type ``/onair-setup approve <code>`` in their own chat (a model cannot
   issue a user slash command) AND pick "Set up & preview" on the host's own choice card
@@ -55,10 +56,10 @@ SCHEMAS = {
     },
     "onair_setup_plan": {
         "name": "onair_setup_plan",
-        "description": ("Read-only. Build the exact On Air setup plan from the user's answers and return its "
-                        "effects plus an approval code. Changes nothing. Ask the user only for answers listed "
-                        "in 'missing'. To run it the USER must type the returned approve command themselves; "
-                        "you cannot approve it."),
+        "description": ("Build the On Air setup plan and approval code. If the user chose the model, planning "
+                        "may make one short paid connection test before approval; it creates no stage folder. "
+                        "Ask only for answers listed in 'missing'. To run it the USER must type the returned "
+                        "approve command themselves; you cannot approve it."),
         "parameters": {
             "type": "object", "additionalProperties": False,
             "properties": {
@@ -129,7 +130,8 @@ SCHEMAS = {
     },
     "onair_show_plan": {
         "name": "onair_show_plan",
-        "description": ("Read-only. Plan a PRIVATE show (127.0.0.1 only) hosted by the saved co-host: it opens the "
+        "description": ("Plan a PRIVATE show (127.0.0.1 only) hosted by the saved co-host. Planning may make "
+                        "one short paid model connection test before approval. It opens the "
                         "show and fills quiet time in its own words from a public show brief and topics, answers "
                         "selected private chat, and speaks/captions through Hermes's own model and voice. Returns "
                         "the exact effects and an approval code, or the missing prerequisite (no canned "
@@ -341,7 +343,11 @@ def make_command(ctx: Any, get_engine=se.engine):
                 return ("No current setup plan has that code. Ask your agent to plan the setup again, or "
                         "use the On Air dashboard tab.")
             fresh = eng.plan(stored.get("answers") or {}, remember=False)
-            if not fresh.get("ok") or fresh.get("digest") != stored.get("digest"):
+            if not fresh.get("ok"):
+                if fresh.get("next_action"):
+                    return " ".join(dict.fromkeys(str(s) for s in (fresh.get("error"), fresh["next_action"]) if s))
+                return "Something changed since that plan was made; ask your agent to plan it again. Nothing was changed."
+            if fresh.get("digest") != stored.get("digest"):
                 return "Something changed since that plan was made; ask your agent to plan it again. Nothing was changed."
             choice = ctx.ask_choice(approve_text(fresh), [
                 {"value": "approve", "label": "Set up & preview"}, {"value": "cancel", "label": "Cancel"}])
@@ -553,7 +559,7 @@ def register(ctx: Any) -> list:
     """Register the private-agent setup entry. Returns what was registered (empty in a stage home)."""
     if se.is_stage_home():
         return []
-    se.set_model_client(getattr(ctx, "llm", None))
+    se.set_model_client_factory(lambda: getattr(ctx, "llm", None))
     dispatch = getattr(ctx, "dispatch_tool", None)
     se.set_tts_dispatch(dispatch if callable(dispatch) else None)
     done = []

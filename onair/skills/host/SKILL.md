@@ -16,8 +16,13 @@ description: Use when talking to the co-host. Send a host line.
    Its `host_mic_timeout_seconds` defaults to 20 (integer 5–120); configure speech-to-text
    with `hermes tools` in that dashboard profile. `host_mic_review` defaults to true and locks Review before sending.
    False lets the owner choose Review or Send as soon as I release; Review remains the default.
-   This is push-to-talk, not hands-free; viewers do not hear the owner's
-   microphone through this plugin.
+   `host_mic_open` is a separate default-false setting that offers Open mic. It starts off on
+   every page load; only the owner may click it on. A red listening indicator means the stream
+   is open. Every detected utterance is sent to the owner's speech-to-text, which may use a
+   cloud provider, and becomes HOST TEXT without transcript review. It cannot directly put the
+   owner's audio or text on air. The co-host reply still follows guard and approval rules.
+   Wear headphones: speech during an airing line can request a cut. Privacy, Stop, off air,
+   stage loss or restart and the documented timeout/refusal conditions close capture.
 3. The co-host reply follows guard and approval rules. Queued means accepted for later, not aired.
    A stage that is off air, paused or private refuses host turns. After a cut, re-enter words;
    do not send a buffered transcript under a new epoch. The owner can type `/onair-stage cut`.
@@ -34,6 +39,7 @@ description: Use when talking to the co-host. Send a host line.
 
 ## Hard rules
 
+Never turn on the microphone or change its capture or release mode; only the owner can do so.
 Never go live, arm, approve a line, lift privacy or unmute on your own. Never handle a
 stream key or ask for a password in chat. Never claim something aired, stopped, rendered
 or sounded good without the appropriate observed evidence. A refused owner tool is not

@@ -15,7 +15,7 @@ def _conn(monkeypatch, cfg, client=None):
 def test_configured_but_unreachable_points_to_agent_chat(monkeypatch):
     model = _conn(monkeypatch, {"model": {"provider": "custom", "default": "fixture-model"}})
     assert model["configured"] is True and model["usable_here"] is False
-    assert "canned" in model["next_action"]  # the setup preview's own wording is unchanged
+    assert model["next_action"] == se.MODEL_UNAVAILABLE
     nxt = sr.show_model_next_action(model)
     assert "canned" not in nxt.lower() and "agent chat" in nxt and "/onair-setup show approve" in nxt
 

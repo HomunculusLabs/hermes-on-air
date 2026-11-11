@@ -64,6 +64,7 @@ const banner = () => document.querySelector('.onair-banner').textContent;
 (async () => {
   receipts = [{ kind: 'runtime_refused', rule: 'tool_surface', epoch: 2, session: 's-1' }];
   await act(async () => { root.render(React.createElement(Page)); await settle(); });
+  await act(async () => { [...document.querySelectorAll('.onair-tab')].find(b => b.textContent === 'Details').click(); await settle(); });
 
   // Latched and off air: the reason, the failing check only, and the clear button.
   assert(panel(), 'preflight panel shown');

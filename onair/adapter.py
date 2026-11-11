@@ -102,12 +102,9 @@ def _plugin_setting(key: str) -> Any:
 
 def _env(key: str) -> str | None:
     name = f"ONAIR_{key.upper()}"
-    try:
-        from gateway.platforms._shared import get_scoped_secret
+    from .secrets import get
 
-        val = get_scoped_secret(name)
-    except Exception:
-        val = os.environ.get(name)
+    val = get(name)
     return val if val not in (None, "") else None
 
 
@@ -652,7 +649,7 @@ def _assist_runner(raw: Any):
             raw = None
     if not isinstance(raw, dict) or str(raw.get("provider") or "off").strip().lower() == "off":
         return None
-    key = _env("jev_api_key") if str(raw.get("provider")).strip().lower() == "jev" else None
+    key = (lambda: _env("jev_api_key")) if str(raw.get("provider")).strip().lower() == "jev" else None
     try:
         return runner_from_settings(raw, jev_key=key)
     except Exception:

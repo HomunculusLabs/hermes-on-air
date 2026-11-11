@@ -56,7 +56,8 @@ def test_agent_only_setup_customize_change_stop_resume(owner, tmp_path, model_se
         assert set(schema["style"]["enforcement"]) == set(schema["style"]["schema"]["properties"])
         assert schema["style"]["enforcement"]["reply_length"].startswith("soft in the real stage")
         status = _call(ctx, "onair_setup_status")
-        assert status["missing"] == ["channel"] and status["model_connection"]["usable_here"] is True
+        assert status["missing"] == ["channel"] and status["model_connection"]["state"] == "untested"
+        assert status["model_connection"]["usable_here"] is False
         assert SECRET not in json.dumps(status) and "api_key" not in json.dumps(status)
         # 2. explicit refusal of unknown/unsafe customization (nothing silently dropped)
         bad = _call(ctx, "onair_setup_plan", {"channel": "cozy_fox", "use_model": True,
@@ -69,7 +70,7 @@ def test_agent_only_setup_customize_change_stop_resume(owner, tmp_path, model_se
         style = {"persona": "A sleepy fox who loves cozy games.", "topics": ["cozy games", "tea"],
                  "avoid_topics": ["politics"], "tone": "relaxed", "reply_pacing": "less_often"}
         plan = _call(ctx, "onair_setup_plan", {"channel": "cozy_fox", "use_model": True, "style": style})
-        assert plan["ok"] and plan["kind"] == "create" and model.calls == 0
+        assert plan["ok"] and plan["kind"] == "create" and model.calls == 0 and model.probe_calls == 1
         assert any("tone: friendly -> relaxed" in e and "reply pacing: normal -> less_often" in e for e in plan["effects"])
         assert any("fixture-provider · fixture-model" in e for e in plan["effects"])
         assert not (tmp_path / "stage").exists() and se.engine().job() is None  # planning changed nothing

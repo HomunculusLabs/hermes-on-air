@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.mark.parametrize(('script', 'message'), [
     ('test_host_mic_ui.cjs', 'host mic state machine passed'),
     ('test_host_cut_on_talk.cjs', 'cut on talk passed'),
+    ('test_open_mic_vad.cjs', 'open microphone VAD and barge-in passed'),
     ('test_host_mic_mode_ui.cjs', 'mic release mode passed'),
 ])
 def test_host_mic_ui_state_machine(script, message):

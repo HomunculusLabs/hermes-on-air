@@ -19,6 +19,19 @@ so Hermes sets the Python version. Hermes' `pyproject.toml` still declares a bro
 by On Air. Some pure modules, such as the word filter, would even import on 3.10; that is not
 support either.
 
+## Manifest warning on Hermes 0.22.7
+
+Hermes 0.22.7 can log this harmless warning at plugin load:
+
+```text
+Plugin on-air: unknown manifest field(s) ignored: provides_middleware (newer manifest schema or typo; plugin still loads)
+```
+
+That version's manifest parser does not recognize the top-level declaration, but On Air registers
+its middleware through `ctx.register_middleware` at runtime; the declaration is retained for
+newer manifest consumers and validation. The warning does not itself prove the middleware is
+active: use the stage preflight and safety checks, and do not go on air if they refuse.
+
 ## Test matrix
 
 | OS | Python | Hermes | How | Status |

@@ -214,17 +214,18 @@ def test_selected_model_connection_is_per_entry_and_never_claimed_where_unavaila
 
     agent = se.SetupEngine(owner, model_client=LoopbackModel())
     dashboard = se.SetupEngine(owner)
-    assert agent.status()["model_connection"]["usable_here"] is True
+    assert agent.status()["model_connection"]["state"] == "untested"
+    assert agent.status()["model_connection"]["usable_here"] is False
     assert dashboard.status()["model_connection"]["usable_here"] is False
     plan = dashboard.plan({"channel": "cozy_fox", "target": os.fspath(tmp_path / "stage"), "use_model": True})
-    assert plan["ok"] and plan["uses_model"] is False, plan  # never claims a connection it cannot use
+    assert not plan["ok"] and plan["next_action"] == se.MODEL_UNAVAILABLE  # no silent downgrade
     plan = agent.plan({"channel": "cozy_fox", "target": os.fspath(tmp_path / "stage"), "use_model": True})
     assert plan["uses_model"] is True
     agent.apply(plan["digest"], se.owner_consent(plan["digest"], "slash-command"))
     try:
         job = wait_done(agent)
         assert job["state"] == "done", job
-        assert len(calls) == 1
+        assert len(calls) == 2 and calls[0]["max_tokens"] == 4 and calls[1]["max_tokens"] > 4
         seen = dashboard.preview_facts()
         assert seen["running"] is True and seen["owner"] == "other_entry" and seen["reply_source"] == "model", seen
         for f in list(agent.dir.iterdir()) + list((tmp_path / "stage").rglob("*")):
@@ -336,6 +337,8 @@ def test_stop_is_not_reported_complete_while_a_model_request_is_still_in_flight(
 
     class BlockedModel:  # disclosed fixture for the host-owned ctx.llm edge: blocks until released, no network
         def complete(self, messages, **kw):
+            if kw.get("max_tokens") == 4:
+                return type("R", (), {"text": "OK"})()
             entered.set()
             gate.wait(30)
             return type("R", (), {"text": "Yes, it's on! Welcome to the stream.", "provider": "fixture-provider",
@@ -409,6 +412,8 @@ class _GatedModel:  # disclosed fixture for the host-owned ctx.llm edge: blocks 
         self.released, self.entered = released, entered
 
     def complete(self, messages, **kw):
+        if kw.get("max_tokens") == 4:
+            return type("R", (), {"text": "OK"})()
         if self.entered is not None:
             self.entered.set()
         self.released()
@@ -519,6 +524,8 @@ _DRAIN_OWNER_PROC = textwrap.dedent('''
     release = Path(sys.argv[4])
     class GatedModel:  # disclosed fixture: blocks until the release file exists, no network
         def complete(self, messages, **kw):
+            if kw.get("max_tokens") == 4:
+                return type("R", (), {"text": "OK"})()
             Path(sys.argv[4] + ".entered").write_text("1")
             deadline = time.monotonic() + 60
             while not release.exists() and time.monotonic() < deadline:
