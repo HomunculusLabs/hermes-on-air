@@ -35,7 +35,8 @@ async function click(text){const b=[...document.querySelectorAll('button')].find
  stateHold=new Promise(r=>releaseState=r);await act(async()=>{await new Promise(r=>setTimeout(r,5200));});
  assert.match(document.querySelector('.live-status-title').textContent,/Disconnected/,'a timed-out core request fails closed');assert([...document.querySelectorAll('.live-controls button')].every(b=>b.disabled));
  stateHold=null;await act(async()=>{releaseState();await new Promise(r=>setTimeout(r,1100));});assert.match(document.querySelector('.live-status-title').textContent,/Approval/,'a healthy stage recovers after a timeout');
- state=initial();pending=[line('1'),line('2'),line('3'),line('4','other')];views=null;await mount();
+ state=initial();pending=[line('1'),line('2'),line('3'),line('4','other')];views=null;receipts=[{kind:'line',disposition:'withheld'},{kind:'line',disposition:'withheld'},{kind:'chat',disposition:'skipped'}];await mount();
+ assert.match(document.querySelector('.live-count').textContent,/Next: 1 of 4/);assert.match(document.querySelector('.live-subtitle').textContent,/withheld 2/);receipts=[];
  assert(document.body.textContent.includes('Host turn'));assert(document.body.textContent.includes('2 more lines in this reply · 1 other waiting'));
  assert(!document.querySelector('.live-picture'));
  deny='approve';await click('Approve all 3');assert.equal(calls.length,1);assert(document.querySelector('.live-warning').textContent.includes('Refused by the show'));
@@ -45,6 +46,9 @@ async function click(text){const b=[...document.querySelectorAll('button')].find
  state=initial();pending=[line('1'),line('2'),line('3')];calls=[];confirm=true;let release;hold=new Promise(r=>release=r);await mount();await click('Approve all 3');await click('Stop');await act(async()=>{release();await tick();});hold=null;
  assert.deepEqual(calls.filter(x=>x.p==='approve').map(x=>x.body.line_id),['1']);assert(calls.some(x=>x.p==='stop'));assert.match(document.querySelector('.live-warning').textContent,/Approval stopped/);
  state=initial();pending=[{...line('n'),turn_id:undefined},{...line('m'),turn_id:undefined}];await mount();assert(![...document.querySelectorAll('button')].some(b=>b.textContent.includes('Approve all')));
+ state=initial();pending=[line('host-draft','host-turn')];receipts=[{kind:'host',id:'request',disposition:'queued',epoch:7,text:'What should we build?'},{kind:'host',id:'request',disposition:'dispatched',turn_id:'host-turn'}];await mount();
+ assert.equal(document.querySelector('.live-context').textContent,'You asked: “What should we build?”');assert.equal(document.querySelector('.live-context').title,'You asked: “What should we build?”');
+ receipts=[];await act(async()=>{await new Promise(r=>setTimeout(r,1100));});assert.equal(document.querySelector('.live-context').textContent,'Host turn');
  state=initial();pending=[line('5')];calls=[];await mount();
  const input=document.querySelector('[aria-label="Host input"]');await act(async()=>{input.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));await tick();});assert.equal(calls.length,0);
  await act(async()=>{document.body.dispatchEvent(new window.KeyboardEvent('keydown',{key:'a',bubbles:true}));await tick();});assert.equal(calls[0].p,'approve');assert(document.body.textContent.includes('Voice is being prepared'));
@@ -56,8 +60,9 @@ async function click(text){const b=[...document.querySelectorAll('button')].find
  state=initial();state.mode='autonomous';state.airing='now';pending=[];receipts=[{kind:'line',disposition:'released',line_id:'now',text:'Not aired yet'}];await mount();
  assert(!document.body.textContent.includes('Not aired yet'));
  receipts=[{kind:'aired',line_id:'old',text:'Old line'},{kind:'aired',line_id:'now',text:'Words on stream now'}];
- await act(async()=>{await new Promise(r=>setTimeout(r,1100));});assert.equal(document.querySelector('.live-line').textContent,'Words on stream now');assert.match(document.querySelector('.live-context').textContent,/on stream/i);
- state.airing=null;await act(async()=>{await new Promise(r=>setTimeout(r,1100));});assert(!document.body.textContent.includes('Words on stream now'));assert(!/on stream/i.test(document.querySelector('.live-context').textContent));
+ await act(async()=>{await new Promise(r=>setTimeout(r,1100));});assert.equal(document.querySelector('.live-line').textContent,'Words on stream now');assert.match(document.querySelector('.live-context').textContent,/speaking now/i);
+ pending=[line('waiting')];await act(async()=>{await new Promise(r=>setTimeout(r,1100));});assert.equal(document.querySelector('.live-line').textContent,'Line waiting');assert.match(document.querySelector('.live-speaking').textContent,/Speaking now: Words on stream now/);assert(document.querySelector('.live-speaking .live-dot.is-on'));
+ state.airing=null;await act(async()=>{await new Promise(r=>setTimeout(r,1100));});assert(!document.body.textContent.includes('Words on stream now'));assert(!document.querySelector('.live-speaking'));pending=[];
  state=initial();state.airing='now';receipts=[{kind:'aired',line_id:'now',text:'Approval on stream'}];await mount();assert.equal(document.querySelector('.live-line').textContent,'Approval on stream');
  state.privacy=true;await act(async()=>{await new Promise(r=>setTimeout(r,1100));});assert(!document.body.textContent.includes('Approval on stream'));receipts=[];
  state=initial();pending=[];state.host_turns.waiting=1;await mount();assert.match(document.querySelector('.live-line').textContent,/thinking/i,'queued host turn is not idle');

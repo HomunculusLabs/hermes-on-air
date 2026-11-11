@@ -136,6 +136,7 @@ class Program:
         self._work: dict | None = None
         # A work view is hidden until a trusted overlay state says it is live and not private.
         self._work_visible = False
+        self._technical_standby = False
         self._mode = "standby"
         self._index = 0
         self._standby = {"title": "We'll be right back", "note": ""}
@@ -210,9 +211,22 @@ class Program:
             self._bump()
             return True
 
+    def technical_standby(self, active: bool) -> bool:
+        """Override public presentation with fixed text, without changing the underlying program."""
+        with self._lock:
+            if self._technical_standby == active:
+                return False
+            self._technical_standby = active
+            self._bump()
+            return True
+
     def public(self) -> dict:
         """The PUBLIC snapshot sent to the page: only the current slide, never the whole deck."""
         with self._lock:
+            if self._technical_standby:
+                return {"type": "program", "revision": self.revision, "mode": "standby",
+                        "work": None, "index": None, "count": 0, "deck_title": "", "slide": None,
+                        "standby": {"title": "We'll be right back", "note": ""}}
             slide = None
             count = len(self._deck["slides"]) if self._deck else 0
             if self._mode == "slides" and self._deck:

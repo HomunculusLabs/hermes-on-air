@@ -33,6 +33,8 @@ first reply and stay optional.
 | `onair_preview_safety` | safety: pause (privacy cut) or stop the private preview |
 
 The packaged skill `on-air:setup` tells the agent how to use these six setup and preview tools.
+If the default stage folder is unsuitable, the plan names the alternative and the reason; the owner
+may request a specific new absolute folder under their home using the optional `stage_home` answer.
 They cannot approve or apply the setup, start a preview, test the model, show a reply or run shell
 commands. Approval comes from the dashboard click or the typed `/onair-setup approve` plus the host's
 choice card. Other On Air tools operate presentation and OBS as documented below. The tools, command and skill are

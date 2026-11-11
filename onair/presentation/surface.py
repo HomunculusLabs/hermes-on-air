@@ -20,6 +20,7 @@ from urllib.parse import urlsplit
 from typing import Callable
 
 from ..overlay.server import LoopbackHTTPServer, Request, Response, SSEStream, _CLOSE
+from ..web_build import capture
 from .deck import Program
 
 WEB = Path(__file__).resolve().parent / "web"
@@ -41,6 +42,8 @@ class PresentationSurface:
         self._subs: set[asyncio.Queue] = set()
         self.loop: asyncio.AbstractEventLoop | None = None
         self.serving = False
+        self.build = ''
+        self._assets: dict[str, bytes] = {}
 
     @property
     def url(self) -> str:
@@ -51,6 +54,7 @@ class PresentationSurface:
         return len(self._subs)
 
     async def start(self) -> None:
+        self.build, self._assets = capture(WEB, ('index.html', 'app.js', 'present.css'))
         await self.http.start()
         self.loop = asyncio.get_running_loop()
         self.serving = True
@@ -69,15 +73,22 @@ class PresentationSurface:
                 writer = self._privacy_writer
                 if writer is not None and self.loop and self.serving:
                     self.loop.call_soon_threadsafe(writer.close)
-            if self.program.work_visibility(False) and self.loop and self.serving:
+            hidden = self.program.work_visibility(False)
+            standby_cleared = self.program.technical_standby(False)
+            if (hidden or standby_cleared) and self.loop and self.serving:
                 self.loop.call_soon_threadsafe(lambda: self.broadcast(urgent=True))
 
     def snapshot(self) -> dict:
         self.enforce_source()
-        return self.program.public()
+        public = self.program.public()
+        if self.build:
+            public['build'] = self.build
+        return public
 
-    def _visibility(self, visible: bool) -> None:
-        if self.program.work_visibility(visible):
+    def _visibility(self, visible: bool, *, standby: bool | None = None) -> None:
+        changed_visibility = self.program.work_visibility(visible)
+        changed_standby = self.program.technical_standby(standby) if standby is not None else False
+        if changed_visibility or changed_standby:
             self.broadcast(urgent=not visible)
 
     async def _watch_privacy(self) -> None:
@@ -117,9 +128,17 @@ class PresentationSurface:
                             live, privacy, mode = event.get('live'), event.get('privacy'), event.get('mode')
                             valid = type(live) is bool and type(privacy) is bool and mode in ('off_air', 'paused', 'approval', 'autonomous')
                             valid = valid and live == (mode in ('approval', 'autonomous') and not privacy)
-                            visible = bool(valid and live and not privacy and self._overlay_url() == url)
-                            self._trusted_overlay = url if visible else None
-                            self._visibility(visible)
+                            source_ok = self._overlay_url() == url
+                            visible = bool(valid and live and not privacy and source_ok)
+                            standby = event.get('standby')
+                            technical = (valid and source_ok and mode in ('paused', 'off_air')
+                                         and isinstance(standby, dict) and standby == {
+                                             'active': True, 'reason': 'technical_difficulties'}
+                                         and type(standby.get('active')) is bool)
+                            self._trusted_overlay = url if valid and source_ok else None
+                            # Loss or a non-live state cannot prove that the owner resumed.
+                            # Keep the fixed card until a valid live state arrives.
+                            self._visibility(visible, standby=True if technical else False if visible else None)
             except (OSError, ValueError, TypeError, KeyError, asyncio.IncompleteReadError, TimeoutError):
                 pass
             finally:
@@ -176,7 +195,7 @@ class PresentationSurface:
         if req.path in _STATIC:
             name, ctype = _STATIC[req.path]
             # no-store: an OBS Browser Source must never keep an old page, script or stylesheet after an upgrade
-            return Response(200, (WEB / name).read_bytes(), ctype, {"Content-Security-Policy": CSP, "Cache-Control": "no-store"})
+            return Response(200, self._assets[name], ctype, {"Content-Security-Policy": CSP, "Cache-Control": "no-store"})
         if req.path == "/present/state":
             resp = Response.json(self.snapshot())
             resp.headers["Content-Security-Policy"] = CSP

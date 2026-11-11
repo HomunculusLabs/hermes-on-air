@@ -5,6 +5,19 @@
   var $ = function (id) { return document.getElementById(id); };
   var stage = $('stage');
   var lastRevision = -1;
+  var loadedBuild = document.documentElement.dataset.build, reloadAttempted = false;
+  function changedBuild(token) {
+    if (!loadedBuild || typeof token !== 'string' || !token || token === loadedBuild) return false;
+    if (!reloadAttempted) {
+      try {
+        var storage = window.sessionStorage, key = 'onair.present.reload', last = storage.getItem(key), now = Date.now();
+        if (last === null || (Number.isFinite(Number(last)) && now - Number(last) >= 30000)) {
+          storage.setItem(key, String(now)); reloadAttempted = true; location.reload();
+        }
+      } catch (err) { /* No durable guard: leave the surface in standby. */ }
+    }
+    return true;
+  }
 
   function show(el, on) { el.hidden = !on; }
 
@@ -17,6 +30,7 @@
       renderWork(snap.work);
       return;
     }
+    activeWork = null;
     show($('work'), false);
     if (snap.mode === 'privacy') {
       $('work-panes').replaceChildren(); $('work-title').textContent = ''; $('work-status').textContent = '';
@@ -55,8 +69,9 @@
     }
   }
 
-  var previous = [];
+  var previous = [], activeWork = null;
   function renderWork(work) {
+    activeWork = work;
     stage.dataset.mode = 'work';
     show($('slide'), false); show($('standby'), false); show($('work'), true);
     $('work-title').textContent = work.title;
@@ -145,6 +160,7 @@
   }
 
   function standby(title, note, mode) {
+    activeWork = null;
     stage.dataset.mode = mode;
     $('standby-title').textContent = title;
     $('standby-note').textContent = note;
@@ -159,7 +175,11 @@
   function connect() {
     var es = new EventSource('/present/events');
     es.onmessage = function (e) {
-      try { render(JSON.parse(e.data)); } catch (err) { /* ignore malformed frames */ }
+      try {
+        var snap = JSON.parse(e.data);
+        if (snap && snap.type === 'program' && changedBuild(snap.build)) { standby('We\u2019ll be right back', '', 'disconnected'); return; }
+        render(snap);
+      } catch (err) { /* ignore malformed frames */ }
     };
     es.onerror = function () {
       // Never leave stale content up while disconnected; EventSource retries by itself.
@@ -171,7 +191,7 @@
     var k = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
     stage.style.setProperty('--window', (k > 0 ? k : 1).toFixed(4));
   }
-  window.addEventListener('resize', fitWindow);
+  window.addEventListener('resize', function () { fitWindow(); if (activeWork) renderWork(activeWork); });
   fitWindow();
   window.__onairPresentation = { revision: function () { return lastRevision; } };
   connect();

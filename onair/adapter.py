@@ -370,7 +370,7 @@ class OnAirAdapter(BasePlatformAdapter):
         rule = rule if rule in _RUNTIME_RULES else "internal_error"
         if c.state.mode != "off_air":
             try:
-                c.set_mode("off_air")
+                c.set_mode("off_air", reason="runtime_guard")
             except Exception:
                 logger.exception("On Air: runtime cut failed")
         c.receipts.write("runtime_refused", rule=rule, epoch=c.state.epoch, session=c.session_id)
@@ -548,31 +548,29 @@ class OnAirAdapter(BasePlatformAdapter):
         # Neither latches: an unarmed or paused turn's block notice made no provider request.
         if plugin_guard().violated() or REFUSAL_TEXT in text:
             return self._withhold_runtime(c, turn_id)
-        # Self-verification: the current turn's reply airs only if the gate passed an On Air
-        # request after the turn was dispatched. Otherwise the gate never saw this turn (a platform
-        # mismatch, or a runtime that bypasses the agent loop): withhold it and latch. Replies for
-        # anything but the current turn are withheld by the stage anyway (no_current_turn).
+        # Only final deliveries can be replies. Gateway status/interrupt messages can be
+        # addressed to the current turn before its provider request starts; withhold them
+        # without treating them as evidence that the runtime gate was bypassed.
         current = c.turn_for(turn_id)
-        if current is not None and text.strip():
-            if not self._gate_observed(current.turn_id):
-                plugin_guard().latch_unobserved()
-                return self._withhold_runtime(c, turn_id)
-            self._remember(self._gate_seen, current.turn_id, None)
-        # notify marks the gateway final-text lane; it is not a success flag. Require
-        # both that marker and the context of its final ledger bracket. The gateway
-        # does not pass the agent result's failed/completed flags to send().
         if (current is None or self._final_delivery.get() != (turn_id, chat_id)
                 or not isinstance(metadata, dict) or metadata.get("notify") is not True
                 or metadata.get("is_approval_prompt") is True):
             self._withheld += 1
             c.receipts.write("line", disposition="withheld", rule="non_final_delivery", turn_id=turn_id)
             return SendResult(success=True, message_id=None)
+        # Failure notices may be final deliveries even when no request was sent. They
+        # never air and cannot prove a gate bypass; retain only a fixed category.
         category = system_text_category(text)
         if category:
-            logger.debug("On Air withheld non-reply delivery (%s): %s", category, text)
+            logger.debug("On Air withheld non-reply delivery (%s)", category)
             c.model_failed(turn_id, category)
             self._withheld += 1
             return SendResult(success=True, message_id=None)
+        # Actual reply candidates still require the runtime gate and successful turn proof.
+        if not self._gate_observed(current.turn_id):
+            plugin_guard().latch_unobserved()
+            return self._withhold_runtime(c, turn_id)
+        self._remember(self._gate_seen, current.turn_id, None)
         proof = current_proof.get()
         if proof is None or not proof.matches(turn_id, text):
             logger.debug("On Air withheld delivery without successful turn proof: %s", text)

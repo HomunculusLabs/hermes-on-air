@@ -56,7 +56,7 @@ const root = createRoot(document.getElementById('root'));
 const settle = () => new Promise(resolve => setTimeout(resolve, 20));
 (async () => {
   await act(async () => { root.render(React.createElement(Page)); await settle(); });
-  await act(async () => { [...document.querySelectorAll('.onair-tab')].find(b => b.textContent === 'Details').click(); await settle(); });
+  await act(async () => { document.querySelector('.onair-secondary summary').click(); [...document.querySelectorAll('.onair-secondary button')].find(b => b.textContent === 'Full desk (advanced)').click(); await settle(); });
   assert(document.body.textContent.includes('RUNDOWN: exhausted'));
   assert([...document.querySelectorAll('[role="alert"]')].some(el => el.textContent.includes('No more prepared material')));
   const guard = document.querySelector('[aria-labelledby="onair-guard"]');

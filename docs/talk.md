@@ -3,6 +3,7 @@
 On Air can take a typed host line, a short microphone clip, or a line relayed by your own
 agent. The co-host's answer follows the normal guard, optional approval, privacy and mute
 controls. **Queued** means accepted for later, not necessarily published or heard.
+For co-host speech configuration and the voice test, see [Voice](voice.md).
 
 ## Turn it on
 
@@ -98,9 +99,17 @@ recognition can be wrong, so keep Review on unless you accept that risk.
 Select **Cut in** in Talk or press **C** when Talk has focus outside text fields (or when
 **Keyboard shortcuts** is enabled); the Desktop Host tab and compact
 pane also have a Cut in button. The owner may type `/onair-stage cut` in the local session.
-The action clears the caption, asks the overlay player to stop and discards old pending work;
-it cannot arm, approve, unmute or lift privacy. It is refused while the stage is private,
-paused or off air, or if its state is stale.
+The action clears the caption, asks the overlay player to stop, revokes clips and drops pending
+and approved co-host lines. It fences the previous epoch, so an old reply cannot air. Owner-typed
+and desk-microphone host lines already queued carry into the new epoch in order. An in-flight
+owner host question is re-asked once only if no newer owner line is queued; relayed host lines
+are dropped and never re-asked. When a turn was in flight, a cut starts a fresh model session to
+isolate delayed cancellation; the old session's conversational context is not carried forward.
+A privacy cut, Stop or off air still discards all queued host lines.
+A new owner host turn withdraws unapproved quiet-beat drafts and puts its reply ahead of waiting
+chat drafts, but does not interrupt approved speech. Chat replies are selective; see `inputs` in
+desk state or the private receipts for skips. Cut in cannot arm, approve, unmute or lift privacy.
+It is refused while the stage is private, paused or off air, or if its state is stale.
 
 With `host_cut_in_on_talk: true` (the default), pressing Hold to talk cuts an airing line
 first. In Open mic, about 400 ms of speech above the voice threshold while a line is airing
@@ -108,8 +117,9 @@ requests the cut; wear headphones to reduce accidental cuts from the co-host's o
 "Airing" here means her caption and voice are already out. While an approved line's voice
 is still being prepared, speaking does not cut it: the line is said when it is ready. The
 **Cut in** button cuts at any time.
-When nothing is airing, speaking does not cut or discard a waiting draft or a turn being
-written. The stage atomically checks that a line is still airing before performing this
+When nothing is airing, speaking does not itself cut the current turn. Once its transcript is
+accepted as a host turn, unapproved beat drafts are withdrawn as described above. The stage
+atomically checks that a line is still airing before performing this
 automatic cut; if it has already ended, it leaves the waiting work alone.
 Recording starts only after that same press receives confirmation and rechecks the
 returned stage boot and epoch. Binding to that post-cut state is safe because the owner

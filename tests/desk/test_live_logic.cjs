@@ -7,6 +7,13 @@ const q = [{line_id:'1',epoch:7,turn_id:'one'}, {line_id:'2',epoch:7,turn_id:'on
 assert.equal(L.group(q).length,2);
 assert.equal(L.group([{line_id:'x'}, {line_id:'y'}]).length,1);
 assert.equal(L.context({source:'host'}),'Host turn');
+const pending={source:'host',turn_id:'turn-1',epoch:7};
+const receipts=[{kind:'host',disposition:'queued',id:'host-1',epoch:7,text:'What should we build?'},{kind:'host',disposition:'dispatched',id:'host-1',turn_id:'turn-1'}];
+assert.equal(L.context(pending,receipts),'You asked: “What should we build?”');
+assert.equal(L.context({...pending,host_text:'Direct question'},receipts),'You asked: “Direct question”');
+assert.equal(L.context({...pending,epoch:8},receipts),'Host turn');
+assert.equal(L.context({...pending,turn_id:'other'},receipts),'Host turn');
+assert.equal(L.context(pending,receipts.slice(1)),'Host turn');
 assert.equal(L.context({source:'beat'}),'Quiet moment');
 assert.equal(L.context({source:'chat',user:'Alice',question:'Hello?'}),'Chat: Alice: Hello?');
 assert.equal(L.shortcut({key:'Enter',target:{tagName:'INPUT'}}),false);

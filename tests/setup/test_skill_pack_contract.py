@@ -17,7 +17,7 @@ from onair.presentation import agent as presentation
 from onair.presentation.obs_control import ObsConfig
 
 ROOT = Path(__file__).resolve().parents[2]
-NEW = ("first-stream", "views", "host", "show-day", "troubleshoot", "seed-bank")
+NEW = ("first-stream", "views", "host", "show-day", "troubleshoot", "seed-bank", "live-build")
 OLD = ("setup", "produce", "scene", "scene-build", "avatar")
 PACK = ROOT / "onair" / "skills"
 _SPEC = importlib.util.spec_from_file_location("produce_skill_checks", ROOT / "tests/setup/test_produce_skill.py")
@@ -129,7 +129,7 @@ def test_installed_loader_resolves_and_views_each_new_skill(tmp_path, monkeypatc
     spec.loader.exec_module(harness)
     if not harness.PY314.is_file() or not (harness.SDK / "hermes_cli").is_dir():
         pytest.skip("the prepared Hermes runtime is unavailable")
-    extra = '''\nfrom tools.skills_tool import skill_view\nout["pack_views"] = {}\nfor name in ("first-stream", "views", "host", "show-day", "troubleshoot", "seed-bank"):\n    path = mgr.find_plugin_skill("on-air:" + name)\n    result = json.loads(skill_view("on-air:" + name)) if path else {}\n    out["pack_views"][name] = {"found": bool(path), "success": bool(result.get("success")),\n                                "content": result.get("content", "")}\n'''
+    extra = '''\nfrom tools.skills_tool import skill_view\nout["pack_views"] = {}\nfor name in ("first-stream", "views", "host", "show-day", "troubleshoot", "seed-bank", "live-build"):\n    path = mgr.find_plugin_skill("on-air:" + name)\n    result = json.loads(skill_view("on-air:" + name)) if path else {}\n    out["pack_views"][name] = {"found": bool(path), "success": bool(result.get("success")),\n                                "content": result.get("content", "")}\n'''
     monkeypatch.setattr(harness, "PROBE", harness.PROBE.replace('out["skills"] = mgr.list_plugin_skills("on-air")',
                                                                  'out["skills"] = mgr.list_plugin_skills("on-air")' + extra))
     for kind in ("owner", "stage"):

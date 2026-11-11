@@ -25,21 +25,25 @@ window.__HERMES_PLUGINS__={register:(_,p)=>Page=p};
 for(const f of ['host-mic.js','live.js','index.js'])vm.runInThisContext(fs.readFileSync('dashboard/dist/'+f,'utf8'));
 const root=createRoot(document.getElementById('root'));
 const tick=()=>new Promise(r=>setTimeout(r,40));
-async function click(label){const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()===label);assert(b,label);await act(async()=>{b.click();await tick();});}
+async function click(label){if(label==='Full desk (advanced)' || label==='Live'){await act(async()=>{document.querySelector('.onair-secondary summary').click();await tick();});}const b=[...document.querySelectorAll('button')].find(x=>x.textContent.trim()===label);assert(b,label);await act(async()=>{b.click();await tick();});}
 (async()=>{
  await act(async()=>{root.render(React.createElement(Page));await tick();});
  assert(document.querySelector('.live-status-title').textContent.includes('Approval'));
  await act(async()=>{document.querySelector('script[src$="host-mic.js"]').onload();await tick();});
  await click('🎙 Mic off');assert(document.querySelector('.onair-live-mic-badge'));
- holdAlerts=true;await click('Details');assert.equal(stopped,1,'leaving Live must close the microphone');
+ holdAlerts=true;await click('Full desk (advanced)');assert.equal(stopped,1,'leaving Live must close the microphone');
  assert(document.body.textContent.includes('APPROVAL'),'core state must not wait for optional alerts');
  holdAlerts=false;await act(async()=>{releaseAlerts();await tick();});
- assert.match(document.body.textContent,/Open mic turned off.*desk closed/i,'the destination explains why the mic stopped');
+ const notice=document.querySelector('.onair-mic-notice');assert(notice && notice.textContent==='Mic turned off: you left the Live tab.');assert(notice.classList.contains('onair-mic-notice-transient'));
+ await act(async()=>{await new Promise(r=>setTimeout(r,4700));});assert(!document.querySelector('.onair-mic-notice'),'tab notice expires');
  assert(!document.body.textContent.includes('CONNECTION LOST'),'healthy stage must not appear lost');
  state={...state,mode:'autonomous'};
  await click('Live');assert(document.querySelector('.live-status-title').textContent.includes('Autonomous'),'return must fetch current state');
  assert(!document.querySelector('.onair-live-mic-badge'),'microphone is not reopened');
- state={...state,mode:'off_air',live:false};await click('Details');await click('Live');
+ await act(async()=>{[...document.querySelectorAll('script[src$="host-mic.js"]')].at(-1).onload();await tick();});
+ await click('🎙 Mic off');assert(document.querySelector('.onair-live-mic-badge'));state={...state,mode:'off_air',live:false};await act(async()=>{await new Promise(r=>setTimeout(r,1200));});await act(async()=>{await tick();});
+ assert.match(document.querySelector('.onair-mic-notice').textContent,/Open mic turned off: desk lost the stage\./);
+ await click('Full desk (advanced)');await click('Live');
  const micOff=[...document.querySelectorAll('.live-talk button')].find(b=>b.textContent.includes('Mic off'));assert(micOff && micOff.disabled,'off air explicitly shows microphone off');
  assert(requests.includes('state')&&requests.includes('pending'));
  await act(async()=>root.unmount());dom.window.close();console.log('tab lifecycle passed');

@@ -24,7 +24,7 @@ def test_cut_tool_and_owner_command_use_real_stage(tmp_path, monkeypatch):
             result = await asyncio.to_thread(stage_runtime.safe_control, Engine(), 'cut_in')
             assert result['ok'] and controller.state.epoch == old + 1
             assert controller.state.mode == 'approval' and not controller.state.privacy and not controller.state.muted
-            assert not controller._host_pending
+            assert [(h.text, h.epoch) for h in controller._host_pending] == [('synthetic line', old + 1)]
             result = await asyncio.to_thread(stage_runtime.owner_command, Engine(), 'cut')
             assert result['ok'] and controller.state.epoch == old + 2
             controller.set_privacy(True)

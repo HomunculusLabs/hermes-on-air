@@ -150,7 +150,7 @@ def test_set_up_and_preview_end_to_end(owner, tmp_path):
     eng = fresh_engine(owner)
     status = eng.status()
     assert status["model_connection"] == {"configured": True, "label": "fixture-provider · fixture-model",
-                                          "usable_here": False, "state": "unavailable",
+                                          "usable_here": False, "state": "untested",
                                           "next_action": status["model_connection"]["next_action"]}
     assert status["missing"] == ["channel"] and status["saved_stage"] is None
     target = os.fspath(tmp_path / "stage")

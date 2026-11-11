@@ -13,7 +13,8 @@ description: Use when starting a first stream. Rehearse off air.
 2. For a real stage, call `onair_stage_status` with `{}`. For each missing prerequisite relay
    its exact next action: the owner installs the plugin and configures the stage model in its
    own home. If voice is enabled but no provider is configured, the owner configures stage TTS
-   or chooses captions only. Provider configuration is not a listening test. Call
+   or chooses captions only. For synthesis, run `hermes onair voice-test` in the stage profile;
+   see docs/voice.md. Neither configuration nor this test is a listening test. Call
    `onair_stage_plan` only when startable; show its effects. The owner types
    `/onair-setup stage approve <code>` and confirms. A start is not an arm; verify mode is off air.
 3. If the owner wants the sample, publish it with:

@@ -29,6 +29,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 logger = logging.getLogger(__name__)
+MAX_CLIP_BYTES = 20 * 1024 * 1024
 
 
 @dataclass(frozen=True)
@@ -93,15 +94,19 @@ class HermesTTS:
             if abandoned.is_set():
                 return None
             if not isinstance(data, dict) or data.get("success") is False or data.get("error"):
-                logger.warning(
-                    "on-air TTS failed: %s",
-                    str((data or {}).get("error", "unknown"))[:200] if isinstance(data, dict) else "bad result",
-                )
+                # Provider messages can contain credentials, endpoints, or input text.
+                logger.warning("on-air TTS failed")
                 return None
             blobs: list[bytes] = []
+            total = 0
             for p in dict.fromkeys(paths[1:]):
                 with contextlib.suppress(OSError):
-                    blobs.append(Path(p).read_bytes())
+                    with Path(p).open(mode="rb") as fp:
+                        body = fp.read(MAX_CLIP_BYTES - total + 1)
+                    total += len(body)
+                    if total > MAX_CLIP_BYTES:
+                        return None
+                    blobs.append(body)
             if not blobs:
                 return None
             mime = sniff_mime(blobs[0])
@@ -117,6 +122,11 @@ class HermesTTS:
         abandoned = threading.Event()
         try:
             return await asyncio.wait_for(asyncio.to_thread(self._run, text, target, abandoned), timeout=self._timeout)
+        except asyncio.CancelledError:
+            abandoned.set()
+            with contextlib.suppress(OSError):
+                target.unlink()
+            raise
         except Exception as exc:
             abandoned.set()  # the worker deletes its output when it returns
             with contextlib.suppress(OSError):
@@ -236,3 +246,99 @@ class FakeTTS:
             await asyncio.sleep(self.delay_s)
         data = silent_wav(self.seconds)
         return Clip(data, "audio/wav", self.seconds)
+
+
+# A diagnostic clip is never published. Keep it separate from the stage's clip directory:
+# constructing HermesTTS sweeps its directory, and must not delete an active show's files.
+VOICE_TEST_SENTENCE = "This is an On Air voice test."
+VOICE_TEST_MAX_BYTES = 20 * 1024 * 1024
+VOICE_TEST_RECENT_S = 24 * 60 * 60
+
+
+def _voice_fingerprint(directory: Path, config: dict, *, create: bool = False) -> str:
+    """Keyed digest of the complete TTS config, never its values or a guessable raw hash."""
+    import hashlib
+    import hmac
+
+    key_path = directory / "voice-test.key"
+    if create:
+        directory.mkdir(parents=True, exist_ok=True)
+        with contextlib.suppress(OSError):
+            os.chmod(directory, 0o700)
+        try:
+            fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            with os.fdopen(fd, "wb") as f:
+                f.write(os.urandom(32))
+    if key_path.is_symlink():
+        raise ValueError("invalid key")
+    key = key_path.read_bytes()
+    if len(key) != 32 or not isinstance(config, dict):
+        raise ValueError("invalid fingerprint input")
+    raw = json.dumps(config, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
+    return hmac.new(key, raw, hashlib.sha256).hexdigest()
+
+
+def voice_test_status(directory: Path, config: dict, *, now: float | None = None) -> tuple[str, str]:
+    """A recent result binds to the exact TTS configuration, not to audio routing."""
+    import hmac
+    import math
+    import time
+
+    warning = "TTS availability and audio routing are not verified; run hermes onair voice-test before the show."
+    try:
+        path = Path(directory) / "voice-test.json"
+        if path.is_symlink() or path.stat().st_size > 4096:
+            raise ValueError("invalid record")
+        record = json.loads(path.read_text(encoding="utf-8"))
+        digest = _voice_fingerprint(Path(directory), config)
+        age = (time.time() if now is None else now) - record["time"]
+        seconds = record["seconds"]
+        if (not isinstance(record.get("fingerprint"), str) or
+                not hmac.compare_digest(record["fingerprint"], digest) or
+                not isinstance(age, (float, int)) or not math.isfinite(age) or not 0 <= age <= VOICE_TEST_RECENT_S or
+                isinstance(seconds, bool) or not isinstance(seconds, (float, int)) or not math.isfinite(seconds) or seconds < 0 or
+                type(record.get("ok")) is not bool):
+            raise ValueError("stale or invalid record")
+        if not record["ok"]:
+            return "fail", "Voice test failed; check the Hermes TTS configuration and run hermes onair voice-test again."
+        return "pass", f"Voice tested {int(age // 60)} minutes ago, {seconds:.1f} s per line. Audio routing is not verified."
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return "warn", warning
+
+
+async def voice_test(dispatch_tool: Callable[[str, dict], Any] | None, directory: Path, config: dict,
+                     *, config_reader: Callable[[], dict] | None = None) -> dict:
+    """Test the same HermesTTS engine as the stage with a fixed, non-private sentence."""
+    import time
+    from .stage import _write_private
+
+    directory = Path(directory)
+    fingerprint = _voice_fingerprint(directory, config, create=True)
+    started = time.monotonic()
+    clip = (await HermesTTS(dispatch_tool, directory / "voice-test-clips").synth(VOICE_TEST_SENTENCE)
+            if dispatch_tool is not None else None)
+    elapsed = time.monotonic() - started
+    mime = sniff_mime(clip.data) if clip is not None else None
+    duration = audio_duration(clip.data, mime) if clip is not None and mime is not None else None
+    if dispatch_tool is None:
+        category = "unavailable"
+    elif clip is None:
+        category = "synthesis"
+    elif not 1 <= len(clip.data) <= VOICE_TEST_MAX_BYTES:
+        category = "size"
+    elif mime not in ("audio/wav", "audio/mpeg", "audio/ogg", "audio/flac"):
+        category = "audio_type"
+    elif duration is None or duration <= 0:
+        category = "duration"
+    else:
+        category = "ok"
+    if config_reader is not None and _voice_fingerprint(directory, config_reader()) != fingerprint:
+        category = "configuration_changed"
+    result = {"ok": category == "ok", "category": category, "seconds": round(elapsed, 3),
+              "duration_s": round(duration, 3) if duration is not None else None, "audio_type": mime}
+    record = {"time": time.time(), "ok": result["ok"], "seconds": result["seconds"], "fingerprint": fingerprint}
+    _write_private(directory / "voice-test.json", json.dumps(record))
+    return result

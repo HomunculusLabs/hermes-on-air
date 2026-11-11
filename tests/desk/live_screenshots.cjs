@@ -117,7 +117,7 @@ const dsFont=dsCss.match(/--font-sans\s*:\s*[^;]+;/)[0];
     }
     if(scenario==='host'){
      const expected=await page.evaluate(()=>[...document.querySelectorAll('.onair-app button:not(:disabled), .onair-app select:not(:disabled), .onair-app input:not(:disabled):not([type=radio]), .onair-app input[type=radio]:checked:not(:disabled), .onair-app [tabindex="0"], .onair-app summary')].filter(el=>el.getClientRects().length && (!el.closest('details:not([open])') || el.tagName==='SUMMARY')).map((el,i)=>{el.dataset.liveFocus=String(i);return i;}));
-     const seen=[], bad=[];await page.locator('.onair-tab').first().focus();
+     const seen=[], bad=[];await page.locator('.onair-secondary summary').focus();
      for(let i=0;i<expected.length+2;i++){
       const item=await page.evaluate(()=>{const e=document.activeElement;if(!e || !e.closest('.onair-app'))return null;const r=e.getBoundingClientRect(),s=getComputedStyle(e);return {id:Number(e.dataset.liveFocus),ring:s.outlineStyle!=='none'&&parseFloat(s.outlineWidth)>=2,visible:r.left>=0&&r.right<=innerWidth&&r.top>=0&&r.bottom<=innerHeight};});
       if(!item)break;seen.push(item.id);if(i>0&&(!item.ring||!item.visible))bad.push(item);await page.keyboard.press('Tab');

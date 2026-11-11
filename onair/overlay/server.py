@@ -33,6 +33,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
 
+from ..web_build import capture
+
 logger = logging.getLogger(__name__)
 
 WEB_DIR = Path(__file__).resolve().parent / "web"
@@ -148,6 +150,7 @@ class SSEStream:
     subscribe: Callable[[], asyncio.Queue]
     unsubscribe: Callable[[asyncio.Queue], None]
     keepalive_s: float = 15.0
+    transform: Callable[[str, str], str] | None = None
 
 
 Handler = Callable[[Request], Awaitable["Response | FileResponse | SSEStream"]]
@@ -315,7 +318,8 @@ class LoopbackHTTPServer:
                     item = ("keepalive", ": keepalive\n\n")
                 if item is _CLOSE:
                     break
-                writer.write(item[1].encode("utf-8"))
+                frame = sse.transform(item[0], item[1]) if sse.transform else item[1]
+                writer.write(frame.encode("utf-8"))
                 await writer.drain()
         finally:
             sse.unsubscribe(q)
@@ -350,8 +354,11 @@ def ev_audio(aid: str, url: str, caption_id: str) -> dict:
     return {"type": "audio", "id": aid, "url": url, "caption_id": caption_id}
 
 
-def ev_state(live: bool, mode: str, privacy: bool, muted: bool) -> dict:
-    return {"type": "state", "live": bool(live), "mode": mode, "privacy": bool(privacy), "muted": bool(muted)}
+def ev_state(live: bool, mode: str, privacy: bool, muted: bool, *, standby: dict | None = None) -> dict:
+    event = {"type": "state", "live": bool(live), "mode": mode, "privacy": bool(privacy), "muted": bool(muted)}
+    if standby is not None:
+        event["standby"] = standby
+    return event
 
 
 def ev_alert(aid: str, kind: str, name: str, amount: int, months: int, tier: str, ttl_ms: int) -> dict:
@@ -404,6 +411,13 @@ class EventHub:
 
     def _stamp(self, event: dict) -> dict:
         keys = _EVENT_KEYS.get(event.get("type", ""))
+        if keys is not None and event.get("type") == "state" and "standby" in event:
+            standby = event["standby"]
+            if (not isinstance(standby, dict) or type(standby.get("active")) is not bool
+                    or standby not in ({"active": True, "reason": "technical_difficulties"},
+                                       {"active": False, "reason": None})):
+                raise ValueError("invalid standby state")
+            keys = (*keys, "standby")
         if keys is None or set(event) != set(keys):
             raise ValueError(f"not a SPEC overlay event: {sorted(event)}")
         self._seq += 1
@@ -486,6 +500,8 @@ class OverlayServer:
         self._scene_anchor = home if self.scene_dir == default_scene else self.scene_dir.parent
         self._scene_parts = ('plugin-data', 'on-air', 'scene') if self.scene_dir == default_scene else (self.scene_dir.name,)
         self.http = LoopbackHTTPServer(self._handle, port=port, name="overlay")
+        self.build = ''
+        self._assets: dict[str, bytes] = {}
 
     @property
     def port(self) -> int:
@@ -496,6 +512,7 @@ class OverlayServer:
         return f"{self.http.base_url}/overlay"
 
     async def start(self) -> None:
+        self.build, self._assets = capture(self.web_dir, ('index.html', 'overlay.js', 'overlay.css'))
         await self.http.start()
 
     async def stop(self) -> None:
@@ -509,7 +526,7 @@ class OverlayServer:
         if path == "/":
             return Response(302, b"", headers={"Location": "/overlay"})
         if path == "/events":
-            return SSEStream(self.hub.subscribe, self.hub.unsubscribe)
+            return SSEStream(self.hub.subscribe, self.hub.unsubscribe, transform=self._build_frame)
         m = re.fullmatch(r"/audio/([A-Za-z0-9_-]{1,64})\.wav", path)
         if m:
             clip = self._clip_lookup(m.group(1))
@@ -546,6 +563,14 @@ class OverlayServer:
             return self._static(path[len("/overlay/") :])
         return Response.text("not found", 404)
 
+    def _build_frame(self, kind: str, frame: str) -> str:
+        if kind != 'state' or not self.build:
+            return frame
+        data = next(line[6:] for line in frame.splitlines() if line.startswith('data: '))
+        event = json.loads(data)
+        event['build'] = self.build
+        return self.hub._frame(event)
+
     def _scene_static(self, rel: str) -> Response | FileResponse:
         parts = rel.split('/')
         ctype = _SCENE_TYPES.get(Path(rel).suffix.lower())
@@ -566,6 +591,8 @@ class OverlayServer:
             return Response.text('not found', 404)
 
     def _static(self, rel: str) -> Response:
+        if rel in self._assets:
+            return Response(200, self._assets[rel], _STATIC_TYPES[Path(rel).suffix.lower()])
         if (
             not rel
             or rel.startswith("/")

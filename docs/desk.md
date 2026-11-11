@@ -177,6 +177,17 @@ only the provider's harmless check (Laya `GET /health`, no inference). The contr
 Measured limits of the Laya mapping on a 59-case synthetic set are in
 `docs/semantic-assist-eval.md`. Treat it as a second pair of eyes, not a release authority.
 
+## Input outcomes in desk state
+
+`GET /state` includes `inputs`, at most five entries in newest-intake-first order:
+`{"kind": "host"|"chat", "who": "..." /* chat only */, "text": "...", "outcome": "answering"|"queued"|"carried"|"skipped"|"dropped", "reason": "..."}`.
+Text is the cleaned receipt text, truncated to 80 characters. Reasons are fixed short categories;
+empty means no additional reason. Routine chat may remain queued before being selected or expiring;
+`answering` means dispatched, not that an answer aired. The list is cleared on privacy, Stop and off air.
+The authenticated dashboard proxy applies its usual recursive token redaction. This is a state field;
+this version does not add a desk display for it. Chat replies are selective; inspect `inputs` in
+state for queued or skipped chat, or the owner-private receipts for the underlying decisions.
+
 ## Host turns
 
 Host turns are opt-in and use the real stage's ordinary runtime, guard, approval, caption and voice

@@ -226,7 +226,10 @@ def run_preflight(config=None, settings=None, *, port_in_use_by_self=False, guar
         if tts is False or (isinstance(tts, str) and tts.strip().lower() in ('0', 'false', 'no', 'off')):
             add('tts', True, 'On Air voice is disabled (captions only).', '')
         elif tts is True or (isinstance(tts, str) and tts.strip().lower() in ('1', 'true', 'yes', 'on')):
-            warn('tts', 'TTS availability and audio routing are not verified; test voice before the show.')
+            from .cli import _data_dir
+            from .tts import voice_test_status
+            status, detail = voice_test_status(_data_dir(), _section(config, 'tts'))
+            checks.append({'name': 'tts', 'status': status, 'detail': detail})
         else:
             add('tts', False, '', 'Voice must be a boolean setting.')
 

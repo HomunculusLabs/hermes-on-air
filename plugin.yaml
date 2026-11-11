@@ -51,6 +51,7 @@ config_schema:
   seed_bank: {type: str, default: "", description: "Path to your seed-bank YAML (show content for dead air)"}
   never_say: {type: list, default: [], description: "Words or phrases the host must never say on air"}
   profanity: {type: str, default: "mask", enum: [allow, mask, block], description: "Profanity policy: mask, block, or allow; slurs are always blocked"}
+  voice: {type: bool, default: true, description: "Use Hermes text-to-speech for released lines; false is captions only"}
   host_name: {type: str, default: "Host", description: "Name of the human host, protected from impersonation"}
   host_turns: {type: bool, default: false, description: "Allow owner host lines on the real stage"}
   host_relay_settle_seconds: {type: int, default: 20, description: "Relay settling window after privacy or re-arming (5 to 120 seconds)"}

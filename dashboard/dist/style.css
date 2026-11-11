@@ -54,6 +54,10 @@ li.onair-skipped .onair-tag { border-color: #e9b45f; color: #e9b45f; }
 .onair-safety-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; }
 .onair-safety-actions > div { min-width: 0; }
 .onair-safety-actions button { width: 100%; font-weight: 700; }
+/* Preserve the descriptions for assistive technology while keeping the advanced desk compact. */
+.onair-desk:not(.onair-practice-desk) .onair-safety-actions p {position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
+.onair-desk:not(.onair-practice-desk) .onair-fact {min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.onair-desk:not(.onair-practice-desk) .onair-panel,.onair-desk:not(.onair-practice-desk) .onair-plain {color:var(--color-card-foreground,var(--color-foreground,#ecefec))}
 .onair-desk button.onair-privacy-button { border-color: #f3b84f; color: #ffd792; }
 .onair-desk button.onair-privacy-button[aria-pressed="true"] { background: #9a6000; color: #fff; }
 .onair-banner .onair-chip.onair-warn { border-color: #e9b45f; color: #ffd792; }
@@ -183,11 +187,15 @@ li.onair-skipped .onair-tag { border-color: #e9b45f; color: #e9b45f; }
 .onair-app > .onair-wizard, .onair-app > .onair-help-tab { margin-left: max(1.25rem, calc((100% - 60rem) / 2)); margin-right: max(1.25rem, calc((100% - 60rem) / 2)); }
 .onair-tabs { display: flex; align-items:center; gap: .5rem; overflow: visible; padding: .75rem 1.25rem 0; max-width: 90rem; margin: 0 auto; }
 .onair-secondary {position:relative;margin-left:auto;flex:none}
+.onair-mic-notice {width:fit-content;max-width:calc(100% - 2rem);margin:.5rem 1rem;padding:.45rem .7rem;border:1px solid var(--color-border,#687979);border-radius:.4rem;background:var(--color-card,#192726);color:var(--color-card-foreground,var(--color-foreground,#ecefec));font-size:.85rem}
+.onair-mic-notice-transient {animation:onair-notice-fade 4.5s ease both}
+@keyframes onair-notice-fade {0%,75% {opacity:1} 100% {opacity:0}}
+@media(prefers-reduced-motion:reduce){.onair-mic-notice-transient {animation:none}}
 .onair-secondary summary {display:flex;align-items:center;min-height:44px;padding:.55rem .7rem;cursor:pointer;white-space:nowrap;list-style:none;color:var(--color-muted-foreground,#bac7c4)}
 .onair-secondary summary::-webkit-details-marker {display:none}
 .onair-secondary summary::after {content:'⌄';margin-left:.4rem}
 .onair-secondary-current {font-weight:700;color:var(--color-foreground,var(--foreground-base,#fff))!important}
-.onair-secondary-items {display:none;position:absolute;z-index:30;top:100%;right:0;min-width:12rem;padding:.35rem;background:var(--color-background,var(--background,#101918));border:1px solid var(--color-border,#899);border-radius:.45rem;box-shadow:0 6px 24px #0005}
+.onair-secondary-items {display:none;position:static;min-width:12rem;padding:.35rem;background:var(--color-background,var(--background,#101918));border:1px solid var(--color-border,#899);border-radius:.45rem;box-shadow:0 6px 24px #0005}
 .onair-secondary[open] .onair-secondary-items {display:flex;flex-direction:column}
 .onair-app .onair-secondary-items button {width:100%;text-align:left;background:transparent;border:0}
 .onair-app .onair-secondary-items button:hover,.onair-app .onair-secondary-items button[aria-current=page] {background:var(--color-secondary,#30433f)}

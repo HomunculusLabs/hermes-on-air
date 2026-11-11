@@ -19,6 +19,27 @@ def app():
     return a
 
 
+def test_state_proxy_preserves_and_redacts_input_rows(tmp_path, monkeypatch):
+    monkeypatch.setenv('HERMES_HOME', str(tmp_path))
+
+    async def run():
+        data = tmp_path / 'plugin-data' / 'on-air'
+        controller = StageController(StageConfig(host_turns=True), data_dir=data)
+        server = ControlServer(controller, data)
+        await server.start()
+        try:
+            controller.set_mode('approval')
+            controller.queue_host_turn('contains ' + server.token, controller.state.epoch)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app()), base_url='http://test') as client:
+                response = await client.get('/api/plugins/on-air/state')
+                assert response.status_code == 200
+                assert response.json()['inputs'][0]['text'] == 'contains [redacted]'
+                assert server.token not in response.text
+        finally:
+            await server.stop()
+    asyncio.run(run())
+
+
 def test_real_control_server(tmp_path, monkeypatch):
     monkeypatch.setenv('HERMES_HOME', str(tmp_path))
     async def run():

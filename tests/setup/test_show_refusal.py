@@ -13,7 +13,12 @@ def _conn(monkeypatch, cfg, client=None):
 
 
 def test_configured_but_unreachable_points_to_agent_chat(monkeypatch):
-    model = _conn(monkeypatch, {"model": {"provider": "custom", "default": "fixture-model"}})
+    class FailedClient:
+        def complete(self, **kwargs):
+            raise RuntimeError("probe failed")
+    client = FailedClient()
+    assert se._probe_model(client) == se.MODEL_UNAVAILABLE
+    model = _conn(monkeypatch, {"model": {"provider": "custom", "default": "fixture-model"}}, client)
     assert model["configured"] is True and model["usable_here"] is False
     assert model["next_action"] == se.MODEL_UNAVAILABLE
     nxt = sr.show_model_next_action(model)
@@ -22,6 +27,6 @@ def test_configured_but_unreachable_points_to_agent_chat(monkeypatch):
 
 def test_not_configured_points_to_hermes_model(monkeypatch):
     model = _conn(monkeypatch, {})
-    assert model["configured"] is False
+    assert model["configured"] is False and model["state"] == "untested"
     nxt = sr.show_model_next_action(model)
     assert "canned" not in nxt.lower() and "hermes model" in nxt

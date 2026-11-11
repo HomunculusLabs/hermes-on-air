@@ -29,7 +29,8 @@ def test_cut_fences_and_drops_work_without_resuming():
     result = c.cut_in(old)
     assert result['epoch'] == old + 1
     assert c.state.mode == 'approval' and c.state.muted is False
-    assert c._air_q.empty() and not c._clips and not c._host_pending
+    assert c._air_q.empty() and not c._clips
+    assert [(host.text, host.epoch) for host in c._host_pending] == [('before cut', old + 1)]
     assert c.hub.history[-1]['type'] == 'caption_clear'
     assert c.queue_host_turn('old', old)['reason'] == 'stale_epoch'
     assert c.queue_host_turn('new', result['epoch'])['ok']

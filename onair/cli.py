@@ -35,6 +35,7 @@ def setup_parser(parser: argparse.ArgumentParser) -> None:
     scene = sub.add_parser('scene', help='Create the optional owner 3D scene')
     scene.add_argument('scene_action', nargs='?', choices=('create', 'preview'), default='create')
     scene.add_argument('--force', action='store_true', help='Replace the existing scene (back up owner files first)')
+    sub.add_parser("voice-test", help="Test configured text-to-speech without playing audio")
     preflight = sub.add_parser("preflight", help="Check stage isolation of the current Hermes home")
     preflight.add_argument("--json", action="store_true")
     rehearse = sub.add_parser("rehearse", help="Synthetic offline rehearsal: no Twitch, model, TTS or network")
@@ -117,6 +118,46 @@ def _preflight(*, as_json: bool = False) -> None:
         print("Preflight passed.")
         print("This checks stage isolation only. It does not verify a model provider or credentials,")
         print("the Twitch channel, or voice; nothing was armed. Arm into approval from the desk when ready.")
+
+
+def _voice_test() -> None:
+    import asyncio
+    from . import adapter
+    from .tts import voice_test
+    from hermes_cli.config import FailedConfigRead, load_config_readonly
+
+    def tts_config() -> dict:
+        config = load_config_readonly()
+        if isinstance(config, FailedConfigRead) or not isinstance(config, dict):
+            raise ValueError("configuration unavailable")
+        section = config.get("tts") or {}
+        if not isinstance(section, dict):
+            raise ValueError("invalid TTS configuration")
+        return section
+
+    try:
+        # A failed invocation must not leave an earlier success claiming this test passed.
+        (_data_dir() / "voice-test.json").unlink(missing_ok=True)
+        ctx = adapter._PLUGIN_CTX
+        dispatch = getattr(ctx, "dispatch_tool", None)
+        if callable(dispatch):
+            # The CLI may load plugins without starting an agent. Initialize the built-in
+            # registry through Hermes's documented discovery before dispatch.
+            try:
+                from tools.registry import discover_builtin_tools
+                discover_builtin_tools()
+            except Exception:
+                dispatch = None
+        else:
+            dispatch = None
+        result = asyncio.run(voice_test(dispatch, _data_dir(), tts_config(), config_reader=tts_config))
+    except Exception:
+        _fail("voice-test: failed; category=unavailable; seconds=unknown; duration_s=unknown; audio_type=unknown")
+    print(f"voice-test: {'ok' if result['ok'] else 'failed'}; category={result['category']}; "
+          f"seconds={result['seconds']}; duration_s={result['duration_s']}; audio_type={result['audio_type']}")
+    print("This tests synthesis only, not audio routing or listening.")
+    if not result['ok']:
+        raise SystemExit(1)
 
 
 def _setup(args: argparse.Namespace) -> None:
@@ -465,6 +506,8 @@ def handle(args: argparse.Namespace) -> None:
         _setup(args)
     elif command == "preflight":
         _preflight(as_json=args.json)
+    elif command == "voice-test":
+        _voice_test()
     elif command == "status":
         _status()
     elif command == "host":

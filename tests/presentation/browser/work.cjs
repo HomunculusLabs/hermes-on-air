@@ -3,7 +3,7 @@ const fs = require('fs');
 const readline = require('readline');
 const {chromium} = require(process.env.ONAIR_PLAYWRIGHT);
 (async () => {
-  const browser = await chromium.launch({headless: true, executablePath: process.env.ONAIR_BROWSER_EXECUTABLE});
+  const browser = await chromium.launch({headless: true, executablePath: process.env.ONAIR_BROWSER_EXECUTABLE, args:['--use-fake-device-for-media-stream','--use-fake-ui-for-media-stream']});
   const page = await browser.newPage({viewport: {width: 1920, height: 1080}});
   const errors = [];
   page.on('pageerror', e => errors.push(String(e)));
@@ -26,6 +26,8 @@ const {chromium} = require(process.env.ONAIR_PLAYWRIGHT);
         return {mode: stage.dataset.mode, viewport: [innerWidth, innerHeight],
           documentOverflow: document.documentElement.scrollWidth > innerWidth || document.documentElement.scrollHeight > innerHeight,
           work: rect(work), font: panes.length ? parseFloat(getComputedStyle(panes[0].querySelector('.pane-content')).fontSize) : null,
+          visiblePanes: panes.filter(p=>getComputedStyle(p).visibility!=='hidden' && getComputedStyle(p).display!=='none').map(p=>({kind:p.dataset.kind, font:parseFloat(getComputedStyle(p.querySelector('.pane-content')).fontSize)*parseFloat(getComputedStyle(stage).getPropertyValue('--window')), visibleLines:[...p.querySelectorAll('.work-line')].filter(x=>getComputedStyle(x).display!=='none').length})),
+          splitTestName: (()=>{const token='test_provider_restart_keeps_work';const line=[...document.querySelectorAll('.work-line')].find(x=>x.textContent.includes(token));if(!line || !line.firstChild)return false;const range=document.createRange(), start=line.firstChild.textContent.indexOf(token);range.setStart(line.firstChild,start);range.setEnd(line.firstChild,start+token.length);return range.getClientRects().length>1;})(),
           terminalTail: !terminal || (last.getBoundingClientRect().bottom <= terminal.getBoundingClientRect().bottom + 1 && last.getBoundingClientRect().top >= terminal.getBoundingClientRect().top - 1),
           more: [...document.querySelectorAll('.pane-more')].map(e => e.textContent),
           railOverflow: (() => { const r = document.querySelector('#work-steps'); return !r.hidden && r.scrollHeight > r.clientHeight + 1; })(),

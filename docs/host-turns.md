@@ -1,9 +1,14 @@
 # Host turns on the real stage
 
-A host turn is a line from the show host to the on-stream co-host, separate from Twitch chat. It
-waits until the current turn and any airing line finish, then takes priority over waiting chat. The
-co-host's answer uses the same runtime check, line guard, approval, captions, voice and output mute as
-a chat reply. Queued means accepted for a future turn, not spoken. At most three host lines can wait.
+A host turn is a line from the show host to the on-stream co-host, separate from Twitch chat. A
+line typed at the desk or sent from its microphone takes priority over waiting chat and unapproved
+quiet-beat drafts, which are withdrawn. It waits for a current model turn; in approval mode it can
+be dispatched while an approved line is queued or airing, without interrupting that line. In
+autonomous mode it waits for approved or released speech to finish. Chat drafts are
+kept behind the host reply. The co-host's answer uses the same runtime check, line guard, approval,
+captions, voice and output mute as a chat reply. Queued means accepted for a future turn, not
+spoken. At most three host lines can wait. Model-relayed host lines do not receive these privileges.
+Chat replies are selective; inspect `inputs` in desk state or the private receipts for skipped chat.
 
 ## Turn it on
 
@@ -86,8 +91,15 @@ or keep terminal approvals on. Private file permissions do not separate processe
 
 ## Privacy and voice limitations
 
-A privacy cut, Stop or off-air transition drops waiting host turns of every origin and fences late
-replies. Host text and its origin are recorded in owner-private receipts; text is cleaned, can be
+A cut-in clears captions, revokes clips, drops unapproved and approved co-host lines, and cancels
+in-flight work behind a new epoch fence. It carries queued owner-typed or desk-microphone host
+lines into that epoch in order. If an owner host turn was already in flight and no newer owner line
+is queued, it is re-asked once; a second cut does not re-ask it again. An old reply cannot air after
+the cut. If a model turn was in flight, the cut starts a fresh model session so delayed cancellation
+of the old session cannot cancel the new question. Previous conversational context in that model
+session is not carried forward. Relayed host lines are dropped, not carried or re-asked. Chat remains subject to its
+existing selective handling. Privacy, Stop or an off-air transition instead drops waiting host
+turns of every origin and fences late replies. Host text and its origin are recorded in owner-private receipts; text is cleaned, can be
 sent to the stage model and may be repeated in a generated reply. It is not placed in the public
 chat overlay. The optional desk microphone is described in [Talk to your co-host](host-mic.md).
 A privacy cut does **not** switch off a microphone owned by another app. Audio already sent to

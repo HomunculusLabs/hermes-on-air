@@ -111,6 +111,8 @@ def tree_digest(root: Path) -> dict[str, str]:
         rel = path.relative_to(root)
         if rel.parts and rel.parts[0] == ".git":
             continue
+        if path.name == ".env":
+            raise HarnessError("refusing to read a .env in the plugin tree")
         if path.is_file() and not path.is_symlink():
             out[rel.as_posix()] = hashlib.sha256(path.read_bytes()).hexdigest()
     return out
@@ -849,23 +851,25 @@ class Verifier:
         run = self.run(["onair", "setup", "--create-home", str(stage), "--channel", "example_channel",
                         "--host-name", "Host", "--yes"])
         files = sorted(p.name for p in stage.iterdir()) if stage.is_dir() else []
-        env_text = (stage / ".env").read_text(encoding="utf-8") if (stage / ".env").is_file() else ""
         config_text = (stage / "config.yaml").read_text(encoding="utf-8") if (stage / "config.yaml").is_file() else ""
         ok = (run[0] == 0 and "Created a NEW On Air stage home" in run[1]
               and files == [".env", ".onair-stage-home", "SOUL.md", "config.yaml", "seed_bank.yaml"]
-              and env_text.splitlines()[-1:] == ["ONAIR_ALLOWED_USERS=onair-stage"]
               and not any(line.startswith("model:") for line in config_text.splitlines())
               and (stat.S_IMODE(stage.stat().st_mode) & 0o077) == 0)
-        self.record("setup_create_home", ok, "a new 0700 stage home with 5 files, only the stage sender in .env, no model; "
+        self.record("setup_create_home", ok, "a new 0700 stage home with 5 files and no model; "
                     "files=%s" % files, run)
         self.facts["stage_home_files_sha256"] = {
-            p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(stage.iterdir()) if p.is_file()
+            p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(stage.iterdir())
+            if p.name != ".env" and p.is_file()
         } if stage.is_dir() else {}
-        before = sorted((p.name, p.stat().st_mtime_ns) for p in stage.iterdir()) if stage.is_dir() else []
+        def signature(p):
+            s = p.stat()
+            return p.name, s.st_dev, s.st_ino, s.st_size, s.st_mtime_ns, s.st_ctime_ns
+        before = sorted(signature(p) for p in stage.iterdir()) if stage.is_dir() else []
         run = self.run(["onair", "setup", "--create-home", str(stage), "--channel", "example_channel", "--yes"])
-        after = sorted((p.name, p.stat().st_mtime_ns) for p in stage.iterdir()) if stage.is_dir() else []
+        after = sorted(signature(p) for p in stage.iterdir()) if stage.is_dir() else []
         self.record("setup_create_home_refuses_existing", run[0] == 1 and "already exists" in run[2] and before == after,
-                    "an existing stage home is refused and left unchanged", run)
+                    "an existing stage home is refused; file metadata unchanged", run)
         inside = self.hermes_home / "stage-inside"
         run = self.run(["onair", "setup", "--create-home", str(inside), "--channel", "example_channel", "--yes"])
         self.record("setup_create_home_refuses_overlap", run[0] == 1 and "overlaps" in run[2] and not os.path.lexists(inside),

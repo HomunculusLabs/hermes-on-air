@@ -97,7 +97,7 @@ def test_owner_home_registers_the_setup_entry_in_the_real_registries(tmp_path):
     assert out["toolsets"] == [out["toolset"]] == ["onair_setup"], out
     # The integrated entry also registers both presentation owner commands.
     assert out["commands"] == ["onair-broadcast", "onair-present", "onair-setup", "onair-stage"], out
-    assert out["skills"] == ["avatar", "first-stream", "host", "produce", "scene", "scene-build", "seed-bank", "setup", "show-day", "troubleshoot", "views"], out
+    assert out["skills"] == ["avatar", "first-stream", "host", "live-build", "produce", "scene", "scene-build", "seed-bank", "setup", "show-day", "troubleshoot", "views"], out
     # Record (not assume) whether a CLI session gets the toolset without extra enablement.
     offered = out["toolset"] in out["cli_tools_default"]
     print("cli_default_offers_onair_setup=" + json.dumps(offered))

@@ -201,7 +201,7 @@ def test_old_owner_cannot_forget_or_falsely_stop_a_resumed_preview(owner, tmp_pa
 
 def test_selected_model_connection_is_per_entry_and_never_claimed_where_unavailable(owner, tmp_path, monkeypatch):
     """Model parity across entries: only an entry that HAS the host's model client may report it usable or
-    draft with it; a copy without it (dashboard module, separate process) says unavailable, and a preview
+    draft with it; a copy without it (dashboard module, separate process) says untested, and a preview
     drafted elsewhere is reported with the OWNER's actual reply source. No credentials in any setup file."""
     monkeypatch.setattr(se, "_ENGINES", {})
     calls = []
@@ -217,6 +217,7 @@ def test_selected_model_connection_is_per_entry_and_never_claimed_where_unavaila
     assert agent.status()["model_connection"]["state"] == "untested"
     assert agent.status()["model_connection"]["usable_here"] is False
     assert dashboard.status()["model_connection"]["usable_here"] is False
+    assert dashboard.status()["model_connection"]["state"] == "untested"
     plan = dashboard.plan({"channel": "cozy_fox", "target": os.fspath(tmp_path / "stage"), "use_model": True})
     assert not plan["ok"] and plan["next_action"] == se.MODEL_UNAVAILABLE  # no silent downgrade
     plan = agent.plan({"channel": "cozy_fox", "target": os.fspath(tmp_path / "stage"), "use_model": True})

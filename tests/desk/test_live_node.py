@@ -9,7 +9,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 
 
-@pytest.mark.parametrize('script', ['test_live_logic.cjs', 'test_live_ui.cjs', 'test_tab_lifecycle.cjs', 'test_live_theme.cjs', 'test_tab_menu.cjs'])
+@pytest.mark.parametrize('script', ['test_live_logic.cjs', 'test_live_ui.cjs', 'test_tab_lifecycle.cjs', 'test_live_theme.cjs', 'test_tab_menu.cjs', 'test_shared_core.cjs'])
 def test_live_node(script):
     node = shutil.which('node')
     modules = Path(os.environ.get('ONAIR_HERMES_SDK', '')) / 'node_modules'

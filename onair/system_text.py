@@ -9,6 +9,7 @@ import re
 # gateway.errors and gateway.notify. The symbol/directive row mirrors the existing
 # onair/stage.py::SYSTEM_NOTICE. Search the whole delivery BEFORE splitting.
 _PATTERNS = (
+    ("usage_limit", r"\b(?:usage limit reached|subscription usage (?:may be |is )exhausted)\b"),
     ("empty", r"\(empty\)|\(No response generated\)|Processing completed but no response was generated|didn't produce a reply this time, even after retries"),
     ("rate_limited", r"\b(?:HTTP\s+429|error code:\s*429|rate-limited every|is rate-limiting requests right now)\b"),
     ("billing", r"\b(?:Billing or credits exhausted:|Provider reported usage/credit exhaustion|reported that billing, credits, or account entitlement is exhausted|reported that your .{0,80}subscription usage (?:may be |is )exhausted)"),

@@ -18,6 +18,19 @@
   var captionExpired = false, pagesComplete = false;
   var alertTimer = null, alertQueue = [], source = null, retryTimer = null, retryDelay = 500;
   var lastSeq = 0, receivedState = false;
+  var loadedBuild = document.documentElement.dataset.build, reloadAttempted = false;
+  function changedBuild(token) {
+    if (!loadedBuild || typeof token !== "string" || !token || token === loadedBuild) return false;
+    if (!reloadAttempted) {
+      try {
+        var storage = window.sessionStorage, key = "onair.overlay.reload", last = storage.getItem(key), now = Date.now();
+        if (last === null || (Number.isFinite(Number(last)) && now - Number(last) >= 30000)) {
+          storage.setItem(key, String(now)); reloadAttempted = true; location.reload();
+        }
+      } catch (err) { /* No durable guard: keep the privacy cover up. */ }
+    }
+    return true;
+  }
 
   function stopAudio() {
     pendingAudio = null;
@@ -228,6 +241,7 @@
       if (Number.isSafeInteger(ev.seq) && ev.seq > lastSeq) lastSeq = ev.seq;
       cut(); return;
     }
+    if (ev.type === "state" && changedBuild(ev.build)) { cut(); return; }
     if (!Number.isSafeInteger(ev.seq) || ev.seq <= lastSeq) return;
     if (!receivedState && ev.type !== "state") return;
     lastSeq = ev.seq;

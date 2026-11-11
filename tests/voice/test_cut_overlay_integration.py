@@ -69,7 +69,8 @@ def test_cut_stops_the_real_stage_overlay_path():
             view = await deliver(cut_events)
             assert view['players'][0]['paused'] and view['players'][0]['src'] == ''
             assert view['hidden'] and view['caption'] == ''
-            assert not c._approval and c._air_q.empty() and not c._host_pending and not c._clips
+            assert not c._approval and c._air_q.empty() and not c._clips
+            assert [(h.id, h.epoch) for h in c._host_pending] == [('host-id', old + 1)]
             assert (c.state.mode, c.state.privacy, c.state.muted) == unchanged
             assert result['epoch'] == old + 1
             await asyncio.sleep(.05)

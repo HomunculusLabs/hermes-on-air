@@ -29,7 +29,7 @@ def test_work_browser_matrix(obs, tmp_path):
         result = json.loads(handler(args))
         assert result['ok'], result
         return result
-    failed = 'FAIL test_clamp: expected 10, got 12'
+    failed = 'FAIL test_provider_restart_keeps_work: expected 10, got 12'
     code = 'def clamp(value, maximum):\n    return value\n\nassert clamp(12, 10) == 10'
     shown = call({'action': 'show', 'title': 'Fix the clamp function', 'status': 'test failed', 'panes': [
         {'kind': 'code', 'label': 'clamp.py', 'language': 'python', 'content': code},
@@ -45,7 +45,7 @@ def test_work_browser_matrix(obs, tmp_path):
     proc = subprocess.Popen(['node', str(driver)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env)
     results = []
     def capture(name, mode, contains=None):
-        for width, height in [(1920,1080), (1280,720), (640,360), (480,270)]:
+        for width, height in [(1920,1080), (1280,720), (640,360), (480,270), (384,216)]:
             proc.stdin.write(json.dumps({'name': name, 'mode': mode, 'contains': contains, 'width': width, 'height': height}) + '\n')
             proc.stdin.flush()
             row = json.loads(proc.stdout.readline())
@@ -55,6 +55,16 @@ def test_work_browser_matrix(obs, tmp_path):
             assert not row['errors'] and not info['documentOverflow'] and not info['injected'], row
             if mode == 'work':
                 assert info['font'] >= 24 and info['terminalTail'], row
+                if width <= 640:
+                    assert len(info['visiblePanes']) == 1, row
+                    assert info['visiblePanes'][0]['font'] >= 14, row
+                    if name == 'failing':
+                        assert not info['splitTestName'], row
+                    if name in ('failing', 'passing', 'long-code'):
+                        assert info['visiblePanes'][0]['kind'] == 'terminal', row
+                        assert info['visiblePanes'][0]['visibleLines'] <= 4, row
+                if width == 1920:
+                    assert info['work'][2] >= 1800, row
             if mode == 'privacy':
                 assert info['privacyClean'], row
             if name == 'passing':

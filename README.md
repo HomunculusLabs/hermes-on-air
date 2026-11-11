@@ -18,6 +18,7 @@ rehearsal while you keep the decisions to arm the show and go live.
 - Captions and optional voice, privacy and mute controls, and a rundown for quiet moments.
 - OBS slides, shared window and three-box views, plus an optional owner-built 3D scene or VRM.
 - [Work view](docs/work-share.md): publish selected code and test output to the existing slides source.
+- [Live build](docs/live-build.md): have your agent build in small public steps, with owner-provided narration lines.
 - [Talk to your co-host](docs/talk.md): type, hold to talk, review and cut in; plus a private, model-backed rehearsal.
 
 ## Quick start: let your agent run it
@@ -82,6 +83,7 @@ skills are listed below. The owner slash commands include `/onair-setup`, `/onai
 - `on-air:first-stream`: take a new show from setup to private rehearsal.
 - `on-air:setup`: prepare, customize and check the co-host.
 - `on-air:produce`: prepare slides, OBS and a rehearsal.
+- `on-air:live-build`: build in public steps with owner-provided narration.
 - `on-air:views`: arrange the three boxes and share a window safely.
 - `on-air:scene`: create and preview the optional scene.
 - `on-air:scene-build`: design an owner 3D room.
@@ -138,10 +140,13 @@ surfaces that cannot establish owner identity.
 
 **Network and data sent.** When the real stage is connected, Twitch chat is read over TLS from
 `irc.chat.twitch.tv:6697` using an anonymous, read-only IRC login. Model requests go through your
-configured Hermes provider; private preview can optionally make one model request and private
-show and real stage can make more. Voice sends released text through Hermes text-to-speech and
-its configured provider. Optional hold-to-talk sends owner audio to the configured Hermes
-speech-to-text provider, which may be cloud-hosted; see [Talk](docs/talk.md). OBS control connects to a loopback WebSocket, default
+configured Hermes provider; opting into model-backed setup includes a small liveness request before
+planning, and private preview can make a further model request. Private show and real stage can make
+more. Voice sends released text through Hermes text-to-speech and its configured provider. Optional
+hold-to-talk and owner-activated open mic send owner audio to the configured Hermes speech-to-text
+provider, which may be cloud-hosted. Open mic sends detected transcripts to the host queue without
+review; it is disabled by default and has a separate setting. See [Talk](docs/talk.md). OBS control
+connects to a loopback WebSocket, default
 `ws://127.0.0.1:4455`. Optional semantic assistance is off by default: Laya uses a configured
 loopback HTTP endpoint (default `http://127.0.0.1:8390`); Jev uses
 `https://api.typesafe.ai/v1/systemone`. Assistance receives the guarded draft and triggering
@@ -183,6 +188,8 @@ customization updates stage files. The optional OBS startup-packet consumer writ
 operator-selected OBS configuration root, not an existing one. Hermes and OBS maintain their own
 configuration and data. The plugin reads configured seed-bank files, stage configuration and
 persona, installed plugin files and process metadata for readiness and stop verification.
+The text-only work view publishes text explicitly supplied by the owner agent; it does not read
+files, and its filters are not a guarantee against disclosure. See [Work view](docs/work-share.md).
 
 On Air reads `ONAIR_OBS_PASSWORD` and `ONAIR_JEV_API_KEY` at call time through Hermes
 `agent.secret_scope.get_secret`; if that API is unavailable, they are treated as empty. Hermes
@@ -192,8 +199,9 @@ To check the sender allow-list for a marked stage, the dashboard asks Hermes to 
 profile's scoped values; Hermes may read that profile's `.env` and configured secret sources.
 The runtime does not parse `.env` itself. It writes the nonsecret stage sender `.env` during approved
 setup and checks for an installation project `.env` without reading its contents. The standalone
-developer install verifier reads and hashes the `.env` in its own disposable synthetic stage home;
-it does not use the owner's stage home. Model credentials belong to Hermes, not On Air's setup plans.
+developer verifier does not read `.env` files: it checks metadata when refusing an existing synthetic
+stage home and refuses a source tree containing one. Metadata is not a content hash; separate tests
+check the generated fixture's contents and sentinel isolation. Model credentials belong to Hermes, not On Air's setup plans.
 On Air has no telemetry or self-update mechanism.
 
 ## Limitations (by design)
@@ -249,15 +257,28 @@ Hermes for this runtime. See [compatibility](docs/compatibility.md) for exact te
 
 ## Development
 
+The dependency-only smoke suite below covers core, guard, word filter and portability tests; it
+is **not** the full suite. In a clean environment it should report passes and skips (including
+Hermes-dependent portability checks), with no failures:
+
 ```bash
-# Development dependencies; some integration tests also need a Hermes runtime on PYTHONPATH.
-# A dependency-only environment is not sufficient for the complete suite:
-uvx --with pytest --with pyyaml --with websockets --with ruamel.yaml --with fastapi --with httpx pytest -q -p no:cacheprovider
-hermes plugins validate .
+uvx --with pytest --with pyyaml --with websockets --with ruamel.yaml --with fastapi --with httpx pytest -q -p no:cacheprovider tests/core tests/guard tests/wordfilter tests/portability
+```
+
+For the full suite, use Hermes's supported Python 3.14 runtime, a matching Hermes checkout, and
+pytest plus the dependencies above available to that interpreter. Set `HERMES_TEST_PYTHON` to
+that Python and `HERMES_SDK` to the checkout; add the test dependencies to its environment or to
+`PYTHONPATH`. From the repository root run:
+
+```bash
+PYTHONPATH="$HERMES_SDK${PYTHONPATH:+:$PYTHONPATH}" "$HERMES_TEST_PYTHON" -B -m pytest -q -p no:cacheprovider
+hermes plugins validate . --install-deps
 hermes onair rehearse        # once installed: the gate, guard and stage controller, offline
 ```
 
-[docs/REVIEW.md](docs/REVIEW.md) has the review checks, including the run against a Hermes checkout.
+The full suite should report passes and environment-dependent skips, not failures; a skip is not
+proof that its integration ran. Browser and installed-runtime checks may require extra opt-in
+fixtures. See [docs/REVIEW.md](docs/REVIEW.md) for the review checks.
 
 ## License
 

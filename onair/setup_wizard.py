@@ -21,6 +21,9 @@ from .onboarding import (MARKER, StageHomeError, StageOptions, check_target, cre
                          render_config, shell_quote, validate_options)
 
 _MAX_TEXT = 200
+NO_TARGET_ACTION = ("Choose a new absolute folder under your home, outside all Hermes homes, with an existing "
+                    "writable parent you own, or change your Hermes home so such a folder is possible, "
+                    "then ask your agent to plan again.")
 
 
 def _text(answers: dict, key: str, default: str = "") -> str:
@@ -326,9 +329,62 @@ def _plugin_source() -> str | None:
 
 
 def suggested_target() -> str:
-    base = Path.home() / "onair-stage"
-    candidate, n = base, 2
-    while os.path.lexists(candidate) and n < 100:
-        candidate, n = Path(f"{base}-{n}"), n + 1
-    return os.fspath(candidate)
+    return os.fspath(Path.home() / "onair-stage")
+
+
+def account_home() -> Path | None:
+    """The OS account home, if available (HOME can be a nested Hermes home)."""
+    try:
+        import pwd
+        return Path(pwd.getpwuid(os.getuid()).pw_dir)
+    except (ImportError, KeyError, AttributeError):
+        return None
+
+
+def owner_roots() -> list[Path]:
+    home = Path.home()
+    roots = [home]
+    account = account_home()
+    # Never expand to an unrelated account home when HOME was deliberately isolated.
+    if account and account.is_absolute() and account != home and account in home.parents:
+        roots.append(account)
+    return roots
+
+
+def check_agent_target(raw: str) -> Path:
+    """The model-facing path is untrusted; do not normalize away traversal."""
+    if not isinstance(raw, str) or not raw or not raw.strip() or "\x00" in raw:
+        raise StageHomeError("Choose a non-empty absolute folder path; nothing was changed.")
+    if raw != raw.strip() or any(ch in raw for ch in "\r\n"):
+        raise StageHomeError("The folder path must not have leading or trailing whitespace or line breaks; nothing was changed.")
+    if not Path(raw).is_absolute():
+        raise StageHomeError("The folder path must be absolute; nothing was changed.")
+    if ".." in Path(raw).parts:
+        raise StageHomeError("The folder path must not contain traversal (..); nothing was changed.")
+    target = check_target(raw)
+    roots = [root for root in owner_roots() if root in target.parents]
+    if not roots:
+        raise StageHomeError("The folder must be under your home directory; nothing was changed.")
+    root = max(roots, key=lambda path: len(path.parts))
+    if hasattr(os, "getuid"):
+        parent = root
+        for part in ("", *target.parent.relative_to(root).parts):
+            if part:
+                parent = parent / part
+            if parent.stat().st_uid != os.getuid():
+                raise StageHomeError(f"Refusing to create {target}: a parent directory is not owned by you; nothing was changed.")
+    return target
+
+
+def fallback_target(default: str) -> str | None:
+    """Find a bounded set of unused names, without creating anything."""
+    candidates = [Path(f"{default}-{n}") for n in (2, 3, 4)]
+    for root in owner_roots()[1:]:
+        candidates.extend(root / name for name in ("onair-stage", "onair-stage-2", "onair-stage-3", "onair-stage-4"))
+    for candidate in candidates:
+        try:
+            return os.fspath(check_agent_target(os.fspath(candidate)))
+        except StageHomeError:
+            continue
+    return None
 

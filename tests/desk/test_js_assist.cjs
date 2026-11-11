@@ -58,7 +58,7 @@ const btn = (scope, label) => [...scope.querySelectorAll('button')].find(b => b.
 
 (async () => {
   await act(async () => { root.render(React.createElement(Page)); await settle(); });
-  await act(async () => { [...document.querySelectorAll('.onair-tab')].find(b => b.textContent === 'Details').click(); await settle(); });
+  await act(async () => { document.querySelector('.onair-secondary summary').click(); [...document.querySelectorAll('.onair-secondary button')].find(b => b.textContent === 'Full desk (advanced)').click(); await settle(); });
 
   // Advice sits next to the real queued line; the human controls stay as they were.
   assert.equal(lines().length, 3);

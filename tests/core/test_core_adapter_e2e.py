@@ -633,6 +633,101 @@ def test_support_messages_are_gated_when_enabled_e2e(guard):
     asyncio.run(go())
 
 
+def test_timeout_then_next_beat_gateway_notice_does_not_latch(guard):
+    """The incident's two timed-out beats then a notice for the next beat, with no network."""
+    async def go():
+        from dataclasses import replace
+        from onair.beats import SeedBank
+        from onair.runtime_guard import plugin_guard
+        class Clock:
+            now = 1000.0
+            def __call__(self):
+                return self.now
+        clock = Clock()
+        ad = await make_adapter(guard)
+        try:
+            c = ad.controller
+            c._dispatch = None
+            c.clock = clock
+            c.cfg = replace(c.cfg, dead_air_seconds=5, turn_gap_s=0, turn_timeout_s=10)
+            c.bank = SeedBank.from_data({'segments': [{'name': 'opening', 'beats': [
+                {'id': f'b-{i}', 'text': 'A quiet beat.', 'provenance': 'fixture'} for i in range(3)]}]})
+            c.segment = 'opening'
+            c.set_mode('approval')
+            c.set_mode('autonomous')
+            epoch = c.state.epoch
+            turns = []
+            for _ in range(2):
+                clock.now += 1000
+                turn = c.tick()
+                assert turn and turn.kind == 'beat'
+                turns.append(turn)
+                ad._remember(ad._gate_marks, turn.turn_id, plugin_guard().passed())
+                clock.now += 11
+                c.tick()
+            clock.now += 1000
+            third = c.tick()
+            assert third and third.kind == 'beat'
+            ad._remember(ad._gate_marks, third.turn_id, plugin_guard().passed())
+            # Exercise Hermes's busy-ack sender: it anchors a non-final message to
+            # the new event while the preceding agent run is still unwinding.
+            from types import SimpleNamespace
+            from gateway.run_busy import GatewayBusySessionMixin
+            class BusySender(GatewayBusySessionMixin):
+                def _reply_anchor_for_event(self, event):
+                    return event.message_id
+                def _thread_metadata_for_source(self, source, anchor):
+                    return None
+            source = ad.build_source(chat_id=third.session, chat_type='dm',
+                                     user_id='onair-stage', user_name='On Air stage')
+            event = SimpleNamespace(message_id=third.turn_id, source=source, internal=False)
+            await BusySender()._send_busy_reply(event, ad, 'A gateway status notice.')
+            await asyncio.sleep(0)
+            assert plugin_guard().violation() is None
+            assert c.state.mode == 'autonomous' and c.state.epoch == epoch
+            assert not c.pending_lines() and c._air_q.empty()
+            rows = c.receipts.tail(100)
+            assert [r['kind'] for r in rows if r['kind'] in ('turn_timeout', 'turn_cancel', 'turn_failure')] == [
+                'turn_timeout', 'turn_cancel', 'turn_failure', 'turn_timeout', 'turn_cancel', 'turn_failure']
+            assert [r['category'] for r in rows if r['kind'] == 'turn_failure'] == ['timeout', 'timeout']
+            assert not [r for r in rows if r['kind'] == 'runtime_refused']
+        finally:
+            await ad.disconnect()
+            plugin_guard().clear()
+    asyncio.run(go())
+
+
+def test_final_usage_notice_without_gate_pauses_without_latching(guard):
+    async def go():
+        from onair.runtime_guard import plugin_guard
+        from onair.types import ChatMsg
+        import time
+        ad = await make_adapter(guard)
+        try:
+            c = ad.controller
+            c._dispatch = None
+            c.set_mode('approval')
+            c.set_mode('autonomous')
+            c.ingest(ChatMsg('twitch', 'showchan', 'quota', 'u', 'viewer',
+                             'What is next?', time.time(), first_msg=True))
+            turn = c.tick()
+            assert turn
+            token = ad._final_delivery.set((turn.turn_id, turn.session))
+            try:
+                await ad.send(turn.session, 'HTTP 429: Usage limit reached for 5 hour',
+                              reply_to=turn.turn_id, metadata={'notify': True})
+            finally:
+                ad._final_delivery.reset(token)
+            assert c.state.mode == 'paused' and c.snapshot()['paused_reason'] == 'usage_limit'
+            assert plugin_guard().violation() is None and c.turn is None
+            assert not c.pending_lines() and c._air_q.empty()
+            assert not any(e['type'] in ('caption', 'audio') for e in c.hub.history)
+        finally:
+            await ad.disconnect()
+            plugin_guard().clear()
+    asyncio.run(go())
+
+
 def test_host_reply_without_runtime_gate_is_withheld(monkeypatch):
     async def go():
         monkeypatch.setattr(onair_adapter, "_plugin_setting", lambda key: True if key == "host_turns" else None)
@@ -644,7 +739,12 @@ def test_host_reply_without_runtime_gate_is_withheld(monkeypatch):
             assert c.queue_host_turn("What next?", c.state.epoch)["ok"]
             turn = c.tick()
             assert turn and turn.kind == "host"
-            result = await ad.send(turn.session, "Unverified reply.", reply_to=turn.turn_id)
+            token = ad._final_delivery.set((turn.turn_id, turn.session))
+            try:
+                result = await ad.send(turn.session, "Unverified reply.", reply_to=turn.turn_id,
+                                       metadata={"notify": True})
+            finally:
+                ad._final_delivery.reset(token)
             assert result.success
             assert c.pending_lines() == []
             assert not any(e["type"] in ("caption", "audio") for e in c.hub.history)
@@ -778,6 +878,7 @@ def test_failures_pause_across_turn_kinds_and_owner_probe_recovers(guard):
         await finish(turn)
         assert not c.model_failure_paused and c.model_failure_count == 0
         assert c.state.mode == "paused" and not tts.calls
+        assert c.snapshot()["next_action"] == "Review the held reply, then choose Approval to resume."
         assert [row["text"] for row in c.pending_lines()] == ["A normal reply."]
         c.set_mode("approval")
         assert c.snapshot()["model_status"] == ""

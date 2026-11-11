@@ -173,6 +173,7 @@ class Turn:
     support: tuple[SupportEntry, ...] = ()
     host_id: str = ""
     host_text: str = ""
+    host_retry: int = 0
 
 
 @dataclass(frozen=True)
@@ -182,6 +183,7 @@ class HostInput:
     created_at: float
     epoch: int
     via: str = "typed"
+    retry: int = 0
 
 
 @dataclass
@@ -234,6 +236,7 @@ class Receipts:
         self._ring: deque[dict] = deque(maxlen=ring)
         self._clock = clock
         self._seq = 0
+        self.observer: Callable[[dict], None] | None = None
         if self.dir is not None:
             self.dir.mkdir(parents=True, exist_ok=True)
             with contextlib.suppress(OSError):
@@ -248,6 +251,11 @@ class Receipts:
         self._seq += 1
         rec = {"n": self._seq, "ts": round(self._clock(), 3), "kind": kind, **fields}
         self._ring.append(rec)
+        if self.observer is not None:
+            try:
+                self.observer(rec)
+            except Exception:
+                logger.warning("on-air intake summary failed", exc_info=True)
         path = self._path()
         if path is not None:
             try:
@@ -440,12 +448,19 @@ class StageController:
         self.boot_id = secrets.token_hex(4)
         self.voice_boot_id = secrets.token_hex(16)
         self.state = StageState()
+        self._inputs: deque[dict] = deque(maxlen=5)
+        self.receipts.observer = self._observe_input_receipt
         self.segment: str | None = (self.bank.segments() or [None])[0]
         self.show_key = self.cfg.show_key or _dt.date.today().isoformat()
         self.turn: Turn | None = None
         self.model_failure_count = 0
         self.model_failure_paused = False
         self.model_status = ""
+        self.paused_reason = None
+        self.off_air_reason = None
+        self._technical_standby = False
+        self._pause_generation = 0
+        self.model_backoff_seconds = 0
         self._seq = 0
         self._window: deque[tuple[ChatMsg, GateVerdict]] = deque()
         self._pending: list[tuple[ChatMsg, GateVerdict]] = []
@@ -501,11 +516,52 @@ class StageController:
     def live(self) -> bool:
         return self.state.mode in LIVE_MODES and not self.state.privacy
 
+    def _standby(self) -> dict:
+        return {"active": self._technical_standby,
+                "reason": "technical_difficulties" if self._technical_standby else None}
+
     def _state_event(self) -> dict:
-        return ev_state(self.live, self.state.mode, self.state.privacy, self.state.muted)
+        return ev_state(self.live, self.state.mode, self.state.privacy, self.state.muted, standby=self._standby())
 
     def _publish_state(self, *, urgent: bool = False) -> None:
         self.hub.publish(self._state_event(), urgent=urgent)
+
+    def _observe_input_receipt(self, rec: dict) -> None:
+        """Project receipt decisions into five private, bounded intake summaries."""
+        if self.state.privacy or self.state.mode == "off_air":
+            return
+        kind = rec.get("kind")
+        if kind == "host" and rec.get("via") == "typed":
+            ident = rec.get("id")
+            disposition = rec.get("disposition")
+            if disposition in ("queued", "refused"):
+                self._inputs.appendleft({"_id": ident, "kind": "host", "text": str(rec.get("text", ""))[:80],
+                                         "outcome": "queued" if disposition == "queued" else "dropped",
+                                         "reason": "" if disposition == "queued" else "busy"})
+            else:
+                outcome = {"dispatched": "answering", "carried": "carried", "dropped": "dropped"}.get(disposition)
+                if outcome:
+                    self._update_input("host", ident, outcome, rec.get("reason", ""))
+        elif kind == "chat" and rec.get("source") == "chat":
+            verdict = rec.get("verdict")
+            outcome = "queued" if verdict in ("worthy", "routine") else "skipped"
+            reason = verdict if verdict in ("routine", "spam", "bait", "skip") else ""
+            self._inputs.appendleft({"_id": rec.get("msg_id"), "kind": "chat", "who": rec.get("user", ""),
+                                     "text": str(rec.get("text", ""))[:80], "outcome": outcome, "reason": reason})
+        elif kind == "turn" and rec.get("turn_kind") == "chat":
+            for ident in rec.get("chat", []):
+                self._update_input("chat", ident, "answering", "")
+        elif kind == "chat_outcome":
+            self._update_input("chat", rec.get("msg_id"), "skipped", rec.get("reason", ""))
+
+    def _update_input(self, kind: str, ident: str, outcome: str, reason: str) -> None:
+        allowed = {"", "routine", "spam", "bait", "skip", "cut_in", "privacy", "stop", "off_air",
+                   "busy", "stale_epoch", "model_failure", "needs_approval_mode"}
+        for row in self._inputs:
+            if row["kind"] == kind and row["_id"] == ident:
+                row["outcome"] = outcome
+                row["reason"] = reason if reason in allowed else "busy"
+                break
 
     def snapshot(self) -> dict:
         t = self.turn
@@ -513,8 +569,27 @@ class StageController:
             "live": self.live,
             "preflight": getattr(self, "preflight", None),
             "mode": self.state.mode,
+            "standby": self._standby(),
             "model_failure_paused": self.model_failure_paused,
             "model_status": self.model_status,
+            "paused_reason": self.paused_reason if self.state.mode == "paused" else None,
+            "off_air_reason": self.off_air_reason if self.state.mode == "off_air" else None,
+            "next_action": ("Fix the runtime guard cause, clear the latch while off air, then choose Approval."
+                            if self.state.mode == "off_air" and self.off_air_reason == "runtime_guard"
+                            and isinstance(getattr(self, "preflight", None), dict)
+                            and str(self.preflight.get("reason", "")).startswith("runtime_refused:") else
+                            "Resolve the failing preflight checks before choosing Approval."
+                            if self.state.mode == "off_air" and isinstance(getattr(self, "preflight", None), dict)
+                            and self.preflight.get("ok") is False else
+                            "Choose Approval to arm the show." if self.state.mode == "off_air" else
+                            "Check the stage logs and model connection; retry a typed host line or choose Approval to resume."
+                            if self.state.mode == "paused" and self.model_failure_paused and self.paused_reason == "timeout" else
+                            "Check the provider; retry a typed host line or choose Approval to resume."
+                            if self.state.mode == "paused" and self.model_failure_paused else
+                            "Review the held reply, then choose Approval to resume."
+                            if self.state.mode == "paused" and self.paused_reason in ("provider_failures", "usage_limit", "timeout") else
+                            "Choose Approval to resume." if self.state.mode == "paused" else ""),
+            "model_backoff_seconds": self.model_backoff_seconds,
             "privacy": self.state.privacy,
             "muted": self.state.muted,
             "epoch": self.state.epoch,
@@ -536,6 +611,7 @@ class StageController:
             "airing": self._airing.line_id if self._airing else None,
             "queued_to_air": self._air_q.qsize(),
             "chat_waiting": len(self._pending),
+            "inputs": [{k: v for k, v in row.items() if k != "_id"} for row in self._inputs],
             "host_turns": {"enabled": self.cfg.host_turns, "waiting": len(self._host_pending),
                            "relay_settle_seconds": self.cfg.host_relay_settle_seconds,
                            "relay_autonomous": self.cfg.host_relay_autonomous},
@@ -710,6 +786,10 @@ class StageController:
     def queue_host_turn(self, text: str, epoch: int, host_id: str | None = None, *, via: str = "typed") -> dict:
         """Admit a finished owner line only against the epoch the caller observed."""
         def refuse(reason: str, message: str) -> dict:
+            if (via == "typed" and reason in ("full", "busy") and self.live
+                    and isinstance(text, str) and 0 < len(text) <= self.gate_cfg.max_chars):
+                self.receipts.write("host", id=secrets.token_hex(16), text=clean_text(text, self.gate_cfg),
+                                    epoch=self.state.epoch, via="typed", disposition="refused", reason="busy")
             return {"ok": False, "reason": reason, "message": message}
         if self.cfg.host_turns is not True:
             return refuse("disabled", "Host turns are off for this stage. Set host_turns: true in the stage plugin settings.")
@@ -750,6 +830,12 @@ class StageController:
         if via == "relay":
             self._relay_ids.add(host_id)
         self._host_pending.append(item)
+        if via == "typed":
+            for line_id, line in list(self._approval.items()):
+                if line.source == "beat":
+                    self._approval.pop(line_id)
+                    self._assist_forget(line_id)
+                    self.receipts.write("line_dropped", line_id=line_id, reason="superseded_by_host")
         self.receipts.write("host", id=host_id, text=cleaned, epoch=epoch, via=via, disposition="queued")
         return {"ok": True, "queued": True, "id": host_id, "position": len(self._host_pending)}
 
@@ -863,6 +949,10 @@ class StageController:
             self._window.popleft()
 
     def _prune_pending(self, now: float) -> None:
+        for msg, verdict in self._pending:
+            if now - msg.ts > self.cfg.select.max_age_s:
+                self.receipts.write("chat_outcome", msg_id=msg.msg_id, disposition="skipped",
+                                    reason="routine" if verdict.kind == "routine" else "busy")
         self._pending = [(m, v) for m, v in self._pending if now - m.ts <= self.cfg.select.max_age_s]
 
     # ---------------------------------------------------------------- turns
@@ -874,9 +964,12 @@ class StageController:
         now = self.clock() if now is None else now
         if (self.state.mode not in LIVE_MODES and not (self.model_failure_paused and self.state.mode == "paused" and self._host_pending)) or self.state.privacy or self.turn is not None:
             return False
-        if self._busy_airing() or now < self._next_turn_at:
+        owner_waiting = any(h.via == "typed" and h.epoch == self.state.epoch for h in self._host_pending)
+        if self._busy_airing() and not (owner_waiting and self.state.mode == "approval"):
             return False
-        if self.state.mode == "approval" and self._approval:
+        if now < self._next_turn_at and not owner_waiting:
+            return False
+        if self.state.mode == "approval" and self._approval and not owner_waiting:
             return False
         return True
 
@@ -896,7 +989,12 @@ class StageController:
         if not self.can_start_turn(now):
             return None
         while self._host_pending:
-            host = self._host_pending.popleft()
+            owner = next((h for h in self._host_pending if h.via == "typed" and h.epoch == self.state.epoch), None)
+            if owner is not None:
+                self._host_pending.remove(owner)
+                host = owner
+            else:
+                host = self._host_pending.popleft()
             if host.epoch != self.state.epoch:
                 self.receipts.write("host", id=host.id, via=host.via, disposition="dropped", reason="stale_epoch")
                 continue
@@ -904,7 +1002,7 @@ class StageController:
             host_msg = ChatMsg("host", "stage", host.id, "host", self.cfg.host_name, host.text, host.created_at)
             turn = Turn(self._next_id("t"), host.epoch, "host", window=window + (host_msg,),
                         armed=armed, started_at=now, session=self.session_id,
-                        host_id=host.id, host_text=host.text)
+                        host_id=host.id, host_text=host.text, host_retry=host.retry)
             self.receipts.write("host", id=host.id, via=host.via, disposition="dispatched", turn_id=turn.turn_id)
             self._launch(turn)
             return turn
@@ -1321,22 +1419,38 @@ class StageController:
         turn = self.turn_for(turn_id)
         if turn is None:
             return
-        if category not in {"provider_error", "rate_limited", "billing", "notice", "empty"}:
+        if category not in {"provider_error", "rate_limited", "usage_limit", "billing", "notice", "empty", "timeout"}:
             category = "notice"
         self.model_failure_count += 1
-        label = {"provider_error": "provider error", "rate_limited": "rate limited",
-                 "billing": "billing", "notice": "notice", "empty": "empty response"}[category]
+        label = {"provider_error": "provider error", "rate_limited": "rate limited", "usage_limit": "usage limit",
+                 "billing": "billing", "notice": "notice", "empty": "empty response", "timeout": "stage timeout"}[category]
         self.model_status = f"The co-host's model did not answer ({label}). Nothing was said."
         self.receipts.write("turn_failure", turn_id=turn.turn_id, outcome="failed", category=category)
         self.turn_done(turn.turn_id, "failed")
-        if self.model_failure_count >= self.cfg.model_failure_pause_after:
+        # Delay automatic quiet beats exponentially, capped at five minutes. Typed
+        # owner retries remain possible; a paused show never schedules a beat.
+        self.model_backoff_seconds = min(300, 30 * 2 ** min(self.model_failure_count - 1, 4))
+        self._last_turn_end = self.clock() + self.model_backoff_seconds
+        if category == "usage_limit" or self.model_failure_count >= self.cfg.model_failure_pause_after:
             while self._host_pending:
                 host = self._host_pending.popleft()
                 self.receipts.write("host", id=host.id, via=host.via, disposition="dropped", reason="model_failure")
             self.model_failure_paused = True
             if self.state.mode in LIVE_MODES:
+                self.paused_reason = ("usage_limit" if category == "usage_limit" else
+                                      "timeout" if category == "timeout" else "provider_failures")
+                self._technical_standby = True
+                self._pause_generation += 1
                 self.state.mode = "paused"
+                revoked = len(self._clips)
+                self._clips.clear()
+                self.receipts.write("clips_revoked", reason="model_failure", count=revoked)
                 self._suspend_alerts("paused")
+                self.receipts.write("model_paused", reason=self.paused_reason,
+                                    backoff_seconds=self.model_backoff_seconds,
+                                    next_action=("Check the stage logs and model connection; retry a typed host line or choose Approval to resume."
+                                                 if self.paused_reason == "timeout" else
+                                                 "Check the provider; retry a typed host line or choose Approval to resume."))
                 self._publish_state(urgent=True)
 
     def model_succeeded(self, turn_id: str | None) -> None:
@@ -1344,13 +1458,14 @@ class StageController:
             self.model_failure_count = 0
             self.model_failure_paused = False
             self.model_status = ""
+            self.model_backoff_seconds = 0
 
     def _check_timeout(self, now: float) -> None:
         t = self.turn
         if t is not None and now - t.started_at > self.cfg.turn_timeout_s:
             self.receipts.write("turn_timeout", turn_id=t.turn_id)
             self._cancel(t, "timeout")
-            self.model_failed(t.turn_id, "provider_error")
+            self.model_failed(t.turn_id, "timeout")
 
     def _cancel(self, turn: Turn, reason: str) -> None:
         if self._cancel_turn is not None:
@@ -1390,6 +1505,10 @@ class StageController:
                 text=text,
             )
             return "withheld"
+        if (self.state.mode == "approval" and turn.kind == "beat"
+                and any(h.via == "typed" for h in self._host_pending)):
+            self.receipts.write("line_dropped", turn_id=turn_id, reason="superseded_by_host")
+            return "withheld"
         source = turn.kind if turn.kind in ("host", "chat", "beat", "support") else "unknown"
         line = PendingLine(self._next_id("l"), self.state.epoch, turn.turn_id, text, self.clock(), source)
         if self.state.mode in ("approval", "paused"):
@@ -1398,7 +1517,13 @@ class StageController:
                     "line", disposition="withheld", rule="approval_queue_full", turn_id=turn_id, text=text
                 )
                 return "withheld"
-            self._approval[line.line_id] = line
+            if turn.kind == "host" and turn.host_id not in self._relay_ids:
+                # Preserve line order within owner replies, ahead of other pending drafts.
+                owner_lines = {k: v for k, v in self._approval.items() if v.source == "host"}
+                other_lines = {k: v for k, v in self._approval.items() if v.source != "host"}
+                self._approval = {**owner_lines, line.line_id: line, **other_lines}
+            else:
+                self._approval[line.line_id] = line
             self.receipts.write("line", disposition="queued", line_id=line.line_id, turn_id=turn_id, text=text)
             self._assist_schedule(line, turn)  # shadow advice only; the line stays waiting for the desk
             return "queued"
@@ -1429,7 +1554,7 @@ class StageController:
 
     # ---------------------------------------------------------------- desk controls
 
-    def set_mode(self, mode: str) -> dict:
+    def set_mode(self, mode: str, *, reason: str = "owner") -> dict:
         """A desk mode change. Chat can never call this (invariant 2).
 
         - The only way out of ``off_air`` is ``approval`` (invariant 3).
@@ -1476,8 +1601,13 @@ class StageController:
                 self._cancel(turn, "needs_approval_mode")
                 self.turn_done(turn.turn_id, "cancelled:needs_approval_mode")
         if mode == "off_air":
+            self.off_air_reason = "runtime_guard" if reason == "runtime_guard" else "owner"
+            if self.off_air_reason == "runtime_guard":
+                self._technical_standby = True
+            self.paused_reason = None
             self.model_failure_paused = False
             self._bump_epoch("off_air")
+            self._inputs.clear()
             self._pending.clear()
             self._suspend_alerts("off_air", drop_held=True)
             self._seen.clear()
@@ -1491,16 +1621,25 @@ class StageController:
             if mode == "approval":
                 self._approval_entered = True
             if mode == "paused":
+                self.paused_reason = "owner"
+                self._pause_generation += 1
+                revoked = len(self._clips)
+                self._clips.clear()
+                self.receipts.write("clips_revoked", reason="paused", count=revoked)
                 self._suspend_alerts("paused")
+            elif mode in LIVE_MODES:
+                self.paused_reason = None
+                self._technical_standby = False
             if mode in LIVE_MODES and old not in LIVE_MODES:
                 self._armed_at = self.clock()  # the dead-air timer starts when we (re)enter a live mode
                 self._last_loosening = self.monotonic()
             if old == "approval" and mode == "autonomous":
                 self._last_loosening = self.monotonic()
             self.state.mode = mode  # type: ignore[assignment]
-            self._publish_state()
+            self._publish_state(urgent=mode == "paused")
         self.receipts.write(
-            "control", action="mode", old=old, new=mode, epoch=self.state.epoch, session=self.session_id
+            "control", action="mode", old=old, new=mode, epoch=self.state.epoch, session=self.session_id,
+            reason=self.off_air_reason if mode == "off_air" else "owner"
         )
         return self.snapshot()
 
@@ -1527,7 +1666,10 @@ class StageController:
         if on:
             self.state.privacy = True
             self.model_failure_paused = False
+            if self.state.mode == "paused":
+                self.paused_reason = "owner"
             self._bump_epoch("privacy")
+            self._inputs.clear()
             dropped = len(self._pending)
             self._pending.clear()  # nothing asked before or during the cut is answered after it
             self._suspend_alerts("privacy")
@@ -1560,10 +1702,13 @@ class StageController:
         and hold (a live mode drops to ``paused`` until the desk resumes)."""
         self.model_failure_paused = False
         self._bump_epoch("stop")
+        self._inputs.clear()
         self._pending.clear()
         self._suspend_alerts("stop")
         if self.state.mode in LIVE_MODES:
             self.state.mode = "paused"
+        if self.state.mode == "paused":
+            self.paused_reason = "owner"
         self._publish_state(urgent=True)
         self.hub.publish(ev_caption_clear(), urgent=True)
         self.receipts.write("control", action="stop", epoch=self.state.epoch, mode=self.state.mode)
@@ -1590,6 +1735,8 @@ class StageController:
         return self.snapshot()
 
     def approve(self, line_id: str, epoch: Any) -> dict:
+        if self.state.mode == "paused":
+            raise ControlError("stage is paused", 409)
         line = self._take_pending(line_id, epoch)
         if self.state.privacy:
             self._approval[line.line_id] = line
@@ -1602,6 +1749,8 @@ class StageController:
 
     def reject(self, line_id: str, epoch: Any) -> dict:
         line = self._take_pending(line_id, epoch)
+        if line.source == "host":
+            self._last_turn_end = self.clock()
         self.receipts.write("control", action="reject", line_id=line.line_id, epoch=line.epoch, text=line.text)
         return self.snapshot()
 
@@ -1622,13 +1771,36 @@ class StageController:
 
     def _bump_epoch(self, reason: str) -> None:
         self.state.epoch += 1
+        t = self.turn
+        carry = deque()
         while self._host_pending:
             host = self._host_pending.popleft()
-            self.receipts.write("host", id=host.id, via=host.via, disposition="dropped", reason=reason)
-        t = self.turn
+            if reason == "cut_in" and host.via == "typed":
+                carry.append(replace(host, epoch=self.state.epoch))
+                disposition = "carried"
+            else:
+                disposition = "dropped"
+            self.receipts.write("host", id=host.id, via=host.via, disposition=disposition, reason=reason)
+        # A cut may retry the interrupted owner question once, but only if no newer
+        # owner question is waiting. Relay input never inherits this privilege.
+        if (reason == "cut_in" and t is not None and t.kind == "host"
+                and t.host_id not in self._relay_ids and t.host_id and t.host_retry == 0
+                and not carry):
+            carry.append(HostInput(t.host_id, t.host_text, t.started_at, self.state.epoch, "typed", 1))
+            self.receipts.write("host", id=t.host_id, via="typed", disposition="carried", reason=reason)
+        elif (reason == "cut_in" and t is not None and t.kind == "host"
+              and t.host_id and t.host_id not in self._relay_ids):
+            self.receipts.write("host", id=t.host_id, via="typed", disposition="dropped", reason=reason)
+        self._host_pending = carry
         if t is not None:
             self._cancel(t, reason)
             self.turn_done(t.turn_id, f"cancelled:{reason}")
+            if reason == "cut_in":
+                # The adapter cancels by session asynchronously. A fresh session prevents
+                # that old cancellation from deleting or interrupting a new host turn.
+                self.session_id = f"stage-{self.boot_id}-{self._show_n}-e{self.state.epoch}"
+        if reason == "cut_in" and carry:
+            self._next_turn_at = self.clock()
         dropped = len(self._approval)
         self._approval.clear()
         self._assist_forget()
@@ -1655,7 +1827,7 @@ class StageController:
     # ---------------------------------------------------------------- airing
 
     def _still_airable(self, line: PendingLine) -> bool:
-        return line.epoch == self.state.epoch and not self.state.privacy and self.state.mode != "off_air"
+        return line.epoch == self.state.epoch and not self.state.privacy and self.state.mode in LIVE_MODES
 
     # Best-effort output fence injected by the adapter (its runtime safety latch): a callable taking
     # the line about to leave, returning True while it may. None allows; a raising fence withholds.
@@ -1680,6 +1852,7 @@ class StageController:
 
     async def air_one(self, line: PendingLine) -> bool:
         """Air one released line: synthesize (unless muted), then caption + audio. Returns True if aired."""
+        pause_generation = self._pause_generation
         if not self._still_airable(line):
             self.receipts.write("line_dropped", line_id=line.line_id, reason="stale")
             return False
@@ -1692,7 +1865,7 @@ class StageController:
             except Exception:
                 clip = None
         # re-check after the await: a privacy cut, stop or epoch change during synthesis wins
-        if not self._still_airable(line):
+        if pause_generation != self._pause_generation or not self._still_airable(line):
             self.receipts.write("line_dropped", line_id=line.line_id, reason="cut_during_synthesis")
             return False
         if self._fenced(line):

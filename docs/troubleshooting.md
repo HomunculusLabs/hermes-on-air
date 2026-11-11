@@ -22,8 +22,18 @@ still be active, use OBS's own controls and verify its output state. See [desk](
 [safety](safety.md). A fresh provider configuration or successful readback is not a sound or
 render test. The overlay's LIVE badge is not the OBS streaming indicator.
 
-The desk shows a short category such as “rate limited” rather than the provider's text. After
-three consecutive failed turns by default, automatic chat and beats pause; change
-`model_failure_pause_after` in the stage plugin settings if needed. A typed host retry is allowed
-while model-paused when host turns are enabled, and its successful response waits for approval;
-the owner must still resume. These checks match known notice shapes, not every possible message.
+### The show stopped answering
+
+Check `mode`, `model_status`, `paused_reason`, `off_air_reason`, `next_action`,
+`model_backoff_seconds`, `standby`, and `preflight`. The desk may show “Paused: the model is not answering”;
+receipts record `model_paused` and its reason without provider text. Three consecutive failures by
+default or a recognized usage limit pauses automatic chat and beats. Quiet beats back off after
+failures (30 seconds doubling to a five-minute cap, plus the quiet interval), and none run while
+paused. During automatic standby the presentation page replaces the work view with the fixed
+“We'll be right back” card, if that page is the visible OBS source. The captions overlay requires
+separate standby support. OBS may still be broadcasting. Check the provider account and stage logs. With host turns enabled, try one typed host line; a successful
+response waits for approval. Choose Approval to resume deliberately. If preflight reports
+`runtime_refused`, fix that cause; while off air click **Clear runtime latch**, verify the refreshed
+preflight passes, and choose Approval. Clearing alone does not arm. Do not bypass a failing guard.
+A stage timeout is not proof of a provider HTTP error. Notice matching is a backstop, not a complete
+diagnosis of provider health.

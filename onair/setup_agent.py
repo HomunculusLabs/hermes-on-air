@@ -20,6 +20,7 @@ Authority is read from the host, not from the model:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +67,7 @@ SCHEMAS = {
                 "channel": {"type": "string", "description": "Twitch channel name, without #"},
                 "host_name": {"type": "string", "description": "The streamer's public name (default Host)"},
                 "agent_name": {"type": "string", "description": "The public co-host's name (default Co-host)"},
+                "stage_home": {"type": "string", "description": "Only when the owner asks for a specific folder: its absolute path"},
                 "use_model": {"type": "boolean",
                               "description": "Only the user's own answer: draft the test reply with their configured model connection"},
                 "style": {**_style.SCHEMA, "properties": {**_style.SCHEMA["properties"],
@@ -212,11 +214,24 @@ def make_handlers(ctx: Any, get_engine=se.engine) -> dict:
         return get_engine().status()
 
     def plan(args):
-        extra = sorted(set(args) - {"channel", "host_name", "agent_name", "use_model", "style"})
+        extra = sorted(set(args) - {"channel", "host_name", "agent_name", "use_model", "style", "stage_home"})
         if extra:  # e.g. approved/caller/target: refused explicitly, never read
             return {"ok": False, "errors": {k: f"{k!r} is not accepted here; only the user approves, in their own "
                                                "chat or the dashboard." for k in extra}}
         answers = {k: args[k] for k in ("channel", "host_name", "agent_name", "use_model", "style") if k in args}
+        if "stage_home" in args:
+            from .onboarding import StageHomeError
+            from .setup_wizard import NO_TARGET_ACTION, check_agent_target, fallback_target, suggested_target
+            try:
+                answers["stage_home"] = os.fspath(check_agent_target(args["stage_home"]))
+            except StageHomeError as exc:
+                default = suggested_target()
+                try:
+                    suggestion = os.fspath(check_agent_target(default))
+                except StageHomeError:
+                    suggestion = fallback_target(default)
+                instruction = f"Suggested alternative: {suggestion}." if suggestion else NO_TARGET_ACTION
+                return {"ok": False, "errors": {"target": f"{exc} {instruction}"}, "fallback_target": suggestion}
         result = get_engine().plan(answers)
         if result.get("ok"):
             result["tell_user"] = ("Show the user these effects. If they agree, THEY type: "
@@ -548,6 +563,7 @@ SKILLS = (("setup", SKILL, "Use when setting up On Air. Prepare a safe preview."
 SKILLS += tuple((name, Path(__file__).resolve().parent / "skills" / name / "SKILL.md", description)
                 for name, description in (
                     ("first-stream", "Use when starting a first stream. Rehearse off air."),
+                    ("live-build", "Use when building live on stream. Show safe progress."),
                     ("views", "Use when arranging stream views. Check OBS readback."),
                     ("host", "Use when talking to the co-host. Send a host line."),
                     ("show-day", "Use when running a show day. Check each handoff."),

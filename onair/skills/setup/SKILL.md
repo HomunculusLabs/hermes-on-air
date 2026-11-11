@@ -77,7 +77,11 @@ owner is. Say so and point the user to their local Hermes or the On Air dashboar
    "less_often"}`. Persona, topics and avoid-topics are PUBLIC: never put the user's private notes,
    memories, files or your own persona there. If a field is refused (`errors`), tell the user the
    reason; do not retry another way. Voice and the approval policy are not set here.
-4. Call `onair_setup_plan` with the answers and the style patch. Show the `effects` word for word.
+4. Call `onair_setup_plan` with the answers and the style patch. Show the `effects` word for word,
+   including the chosen stage folder and why a default was not used. Use `stage_home` only when the
+   owner asks for a specific absolute folder; ask before using a custom folder and never invent one.
+   If a folder is refused, relay its rule and suggested alternative; if none is available, relay the
+   returned instruction.
 5. You cannot approve. Tell the user to type the returned `approve_with.chat` command themselves
    (for example `/onair-setup approve 1a2b3c4d`) and pick **Set up & preview** on the card, or to
    press **Set up & preview** in the On Air tab. Both run the same plan. An old code stops working

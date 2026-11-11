@@ -29,6 +29,23 @@ def _answers(tmp_path):
     return {"channel": "cozy_fox", "target": os.fspath(tmp_path / "stage"), "use_model": True}
 
 
+def test_dashboard_without_client_is_untested_but_plan_still_refuses(owner, tmp_path, monkeypatch):
+    import asyncio
+    import json
+    from dashboard import plugin_api
+
+    eng = se.SetupEngine(owner)
+    monkeypatch.setattr(plugin_api, "_engine", lambda: eng)
+    response = asyncio.run(plugin_api.quick_status())
+    connection = json.loads(bytes(response.body))["model_connection"]
+    assert connection["state"] == "untested" and connection["usable_here"] is False
+    assert "Not tested from this page" in connection["next_action"]
+    assert "cannot reach" not in connection["next_action"]
+    refusal = eng.plan(_answers(tmp_path))
+    assert not refusal["ok"] and refusal["next_action"] == se.MODEL_UNAVAILABLE
+    assert eng.status()["model_connection"]["state"] == "untested"
+
+
 def test_failure_refuses_before_plan_or_folder_and_redacts(owner, tmp_path, caplog):
     client = Model(RuntimeError("secret-token-and-url"))
     eng = se.SetupEngine(owner, model_client=client)

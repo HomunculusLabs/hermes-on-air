@@ -148,6 +148,11 @@ def test_violation_cuts_on_the_loop_records_rule_and_refuses_to_arm(env, plugin_
             assert c.state.mode == "off_air" and c.turn is None
             refused = receipts(ad, "runtime_refused")
             assert [r["rule"] for r in refused] == ["private_context"]
+            assert c.snapshot()["off_air_reason"] == "runtime_guard"
+            assert c.snapshot()["standby"] == {"active": True, "reason": "technical_difficulties"}
+            assert "clear the latch" in c.snapshot()["next_action"]
+            mode = [r for r in receipts(ad, "control") if r.get("new") == "off_air"][-1]
+            assert mode["reason"] == "runtime_guard"
             assert "private note" not in repr(receipts(ad))
             state = c.snapshot()
             assert state["preflight"]["ok"] is False and state["preflight"]["reason"] == "runtime_refused:private_context"
@@ -199,8 +204,15 @@ def test_clear_then_rearm_is_explicit_and_recorded(env, plugin_registration, fre
             assert c.clear_runtime_violation == ad.clear_runtime_violation
             state = c.clear_runtime_violation()
             assert state["preflight"]["ok"] is True and "reason" not in state["preflight"]
+            assert state["off_air_reason"] == "runtime_guard"
+            assert state["standby"] == {"active": True, "reason": "technical_difficulties"}
+            assert state["next_action"] == "Choose Approval to arm the show."
+            c.preflight = {"ok": False, "checks": [{"name": "tools", "status": "fail", "detail": "fixture"}]}
+            assert c.snapshot()["next_action"] == "Resolve the failing preflight checks before choosing Approval."
+            c.preflight = state["preflight"]
             assert [r["rule"] for r in receipts(ad, "runtime_cleared")] == ["tool_surface"]
             assert c.set_mode("approval")["mode"] == "approval"
+            assert c.snapshot()["standby"] == {"active": False, "reason": None}
             assert c.session_id.endswith("-2")  # a fresh show session
         finally:
             await ad.disconnect()

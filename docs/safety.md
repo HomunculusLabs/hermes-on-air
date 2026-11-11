@@ -20,11 +20,33 @@ On Air sees it. The per-line guard also blocks known system text. An empty or ti
 as a failure.
 
 After `model_failure_pause_after` consecutive failures (default **3**, a positive integer in the
-stage plugin settings), the stage pauses and stops automatic chat and beat turns. The desk says
-“Paused: the model is not answering”. The owner can resume after investigating, or submit one
-new typed host line as a retry while paused if host turns are enabled. A successful retry is held
-for approval and does **not** resume the show automatically. A stop or privacy cut remains in
-force; neither is undone by this recovery mechanism.
+stage plugin settings), or a recognized usage-limit notice, the stage pauses and stops automatic
+chat and beat turns. Before pausing, quiet beats back off by 30, 60, 120, then at most 300 seconds
+in addition to the quiet interval; typed owner turns may still be tried. The stage does not
+resume itself. A timeout is recorded as `timeout`: a stage deadline, not proof the provider returned an error.
+The desk says “Paused: the model is not answering”. The owner can resume after investigating,
+or submit one new typed host line as a retry while paused if host turns are enabled. A successful
+retry is held for approval and does **not** resume the show automatically. A stop or privacy cut
+remains in force; neither is undone by this recovery mechanism.
+
+### The show stopped answering
+
+Inspect `mode`, `model_status`, `paused_reason`, `off_air_reason`, `next_action`,
+`model_backoff_seconds`, `standby`, and `preflight`. A `model_paused` receipt records the fixed reason
+and next action without provider text. A pause after a deadline records `paused_reason=timeout`;
+this identifies the last failed turn, not an HTTP status or proof of an outage. Provider failures
+and recognized usage limits pause the stage
+without an epoch bump or undoing already aired captions. Existing audio clips are revoked. The
+presentation page displays the fixed “We'll be right back” card instead of the work view while the
+automatic standby is active, provided that page is the visible OBS source. The fixed card remains
+on loss of the overlay connection; a trusted live state is needed to restore the underlying view.
+The underlying work is not sent during standby. The separate captions
+overlay requires standby support to show a card of its own. Check provider availability and
+limits; if enabled, try one typed host line and review the result, then choose Approval to resume.
+If `off_air_reason` is `runtime_guard`, fix the named preflight refusal first, then while off air
+choose **Clear runtime latch**, verify preflight passes, and choose Approval. A real unobserved
+reply still latches and cannot air; gateway notices are withheld without being mistaken for replies.
+Neither pause nor off air stops OBS or Twitch.
 
 The gateway's final-delivery marker alone does **not** certify that the model succeeded: Hermes
 can put a failure notice on that path. On Air also requires matching agent-turn completion and
@@ -51,8 +73,16 @@ continue. Stop, off air and stopping the OBS stream are distinct operations. Pri
 control other OBS sources or microphones, and audio already sent to a provider cannot be recalled.
 If control is lost, use OBS's own controls and verify the output. See [desk](desk.md).
 
-Cut in stops the current overlay clip and clears its caption and pending work; it does not arm,
-unmute or lift privacy. Optional hold-to-talk begins recording only on an owner gesture, sends audio
+Cut in stops the current overlay clip, clears its caption, revokes clips, discards unapproved and
+approved co-host lines and fences all old-epoch replies. Queued owner-typed or desk-microphone
+host lines carry forward in order; an in-flight owner question is retried once only when no newer
+owner line waits. When a model turn was in flight, the stage starts a fresh model session to isolate
+the delayed cancellation; the old session's conversational context is not carried forward. Relay
+input is dropped and is never retried. Privacy, Stop and off air still discard
+queued host input from every origin. A newly accepted owner host turn withdraws waiting unapproved
+quiet-beat drafts but does not interrupt approved speech; chat drafts stay behind its reply. Chat
+replies are selective; see `inputs` in desk state or private receipts for skipped chat. Cut in does
+not arm, unmute or lift privacy. Optional hold-to-talk begins recording only on an owner gesture, sends audio
 for the owner's configured speech-to-text, and defaults to transcript review. That service may
 be cloud-hosted. On Air does not add the owner's microphone to the broadcast; an independent OBS
 microphone needs its own privacy control. See [Talk](talk.md).

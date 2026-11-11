@@ -97,7 +97,8 @@ const click = async (name) => { const b = button(name); assert(b, 'no button ' +
   assert.equal([...document.querySelectorAll('button')].filter((b) => b.textContent.trim() === 'Bring in the next message').length, 1, 'one next-message action');
   assert(!posts.some((p) => /^(approve|reject|privacy|mute|stop|mode)$/.test(p)), 'no real desk control was posted');
 
-  await click('Details');
+  await act(async () => { document.querySelector('.onair-secondary summary').click(); });
+  await click('Full desk (advanced)');
   await flush(80);
   assert(text().includes('NOT CONNECTED'));
   assert(button('Open the setup wizard') && button('Try a practice show'), 'unconnected desk offers setup and practice');

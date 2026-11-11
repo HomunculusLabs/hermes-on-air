@@ -95,7 +95,7 @@ def _find_probe(client: Any, context: contextvars.Context) -> dict | None:
 
 def _model_state(client: Any) -> str:
     if client is None:
-        return "unavailable"
+        return "untested"
     context = contextvars.copy_context()
     with _PROBES_LOCK:
         record = _find_probe(client, context)
@@ -244,14 +244,16 @@ def model_connection(model_client: Any) -> dict:
     parts = [p for p in (provider, name) if isinstance(p, str) and _LABEL.fullmatch(p.strip())]
     label = " · ".join(p.strip() for p in parts)
     if not label:
-        return {"configured": False, "label": "", "usable_here": False, "state": "unavailable",
+        return {"configured": False, "label": "", "usable_here": False, "state": "untested",
                 "next_action": ("No model connection is set up in Hermes yet. Set one up with Hermes's own "
                                 "model setup (hermes model); it asks for any key itself. On Air never asks "
                                 "for keys. Until then the preview uses a canned stand-in reply.")}
     state = _model_state(model_client)
+    untested = ("Not tested from this page. Ask your Hermes agent to plan setup: it tests the connection "
+                "before you approve." if model_client is None else
+                "The model connection is untested here. Ask your Hermes agent to plan setup and test it.")
     return {"configured": True, "label": label, "usable_here": state == "ready", "state": state,
-            "next_action": "" if state == "ready" else (MODEL_UNAVAILABLE if state == "unavailable" else
-                "The model connection is untested here. Ask your Hermes agent to plan setup and test it.")}
+            "next_action": "" if state == "ready" else (MODEL_UNAVAILABLE if state == "unavailable" else untested)}
 
 
 # ---- the engine ---------------------------------------------------------------------------------
@@ -401,7 +403,7 @@ class SetupEngine:
 
     # -- plan
     def plan(self, answers: Any, *, remember: bool = True) -> dict:
-        from .setup_wizard import options_from, suggested_target
+        from .setup_wizard import NO_TARGET_ACTION, check_agent_target, options_from, suggested_target, fallback_target
         from .onboarding import StageHomeError, check_target, validate_options
         if not isinstance(answers, dict):
             return {"ok": False, "errors": {"form": "answers must be an object"}}
@@ -409,14 +411,16 @@ class SetupEngine:
             return {"ok": False, "errors": {"form": "This Hermes home is an On Air stage; set up from your own "
                                                     "Hermes home instead."}}
         from . import style as st
-        unknown = sorted(set(answers) - {"channel", "host_name", "agent_name", "use_model", "target", "style"})
+        unknown = sorted(set(answers) - {"channel", "host_name", "agent_name", "use_model", "target", "stage_home", "style"})
         if unknown:
             return {"ok": False, "errors": {k: f"{k!r} is not a setup answer; supported: channel, host_name, "
                                                "agent_name, use_model, style." for k in unknown}}
         patch, style_errors = st.validate_patch(answers.get("style"))
         if style_errors:
             return {"ok": False, "errors": {"style." + k: v for k, v in style_errors.items()}}
-        clean = {k: answers.get(k) for k in ("channel", "host_name", "agent_name", "use_model", "target")
+        if "target" in answers and "stage_home" in answers:
+            return {"ok": False, "errors": {"target": "Choose only one stage folder."}}
+        clean = {k: answers.get(k) for k in ("channel", "host_name", "agent_name", "use_model", "target", "stage_home")
                  if answers.get(k) is not None}
         if patch:
             clean["style"] = patch
@@ -430,7 +434,11 @@ class SetupEngine:
         connection = model_connection(client)
         missing = []
         before = None
+        fallback_reason = None
+        automatic_target = not (clean.get("target") or clean.get("stage_home"))
         if resume:
+            if not automatic_target:
+                return {"ok": False, "errors": {"target": "A saved stage cannot be moved by setup; provide a channel to create a new stage."}}
             kind, target = "resume", saved["home"]
             channel, agent = saved.get("channel", ""), saved.get("agent_name", "Co-host")
             # Identity of an existing stage is not changed by setup: refuse explicitly, never drop silently.
@@ -446,7 +454,7 @@ class SetupEngine:
             kind = "create"
             fields = {"channel": clean.get("channel") or "", "host_name": clean.get("host_name") or "Host",
                       "agent_name": clean.get("agent_name") or "Co-host",
-                      "target": clean.get("target") or suggested_target()}
+                      "target": clean.get("stage_home") or clean.get("target") or suggested_target()}
             if not fields["channel"]:
                 missing.append("channel")
             try:
@@ -458,13 +466,27 @@ class SetupEngine:
             if not errors and not missing:
                 try:
                     validate_options(options)
-                    target = os.fspath(check_target(target))
                 except StageHomeError as exc:
                     errors["target"] = str(exc)
+                try:
+                    if not errors:
+                        target = os.fspath(check_agent_target(target) if "stage_home" in clean else check_target(target))
+                except StageHomeError as exc:
+                    if automatic_target:
+                        alternative = fallback_target(target)
+                        if alternative:
+                            fallback_reason = str(exc)
+                            target = alternative
+                        else:
+                            errors["target"] = f"{exc} {NO_TARGET_ACTION}"
+                    else:
+                        errors["target"] = str(exc)
             if errors:
                 return {"ok": False, "errors": errors, "missing": missing}
             channel, agent = options.channel, options.agent_name
-            clean.update(channel=channel, host_name=options.host_name, agent_name=agent, target=target)
+            clean.update(channel=channel, host_name=options.host_name, agent_name=agent)
+            if not automatic_target:
+                clean["stage_home" if "stage_home" in clean else "target"] = target
         if use_model is None and connection["configured"] and client is not None:
             missing.append("use_model")
         if missing:
@@ -482,6 +504,8 @@ class SetupEngine:
         use = bool(use_model)
         effects = []
         if kind == "create":
+            if fallback_reason:
+                effects.append(f"The default stage folder was not used: {fallback_reason} Chosen alternative: {target}.")
             effects.append(f"Create a new private stage folder {target} for a public co-host called {agent}. "
                            "It gets its own public persona: none of your own agent's memory, profile, files, "
                            "tools, model or keys are copied into it.")
@@ -509,6 +533,8 @@ class SetupEngine:
                 "host_name": clean.get("host_name", saved.get("host_name", "Host") if resume else "Host"),
                 "use_model": use, "model_label": connection["label"] if use else "", "effects": effects,
                 "style_patch": patch, "style_before": before}
+        if "stage_home" in clean or fallback_reason:
+            body["checked_agent_target"] = True
         digest = hashlib.sha256(json.dumps(body, sort_keys=True).encode()).hexdigest()
         result = {"ok": True, "digest": digest, "code": digest[:8], "kind": kind, "target": target,
                   "effects": effects, "uses_model": use, "answers": clean, "model_connection": connection,
@@ -606,7 +632,11 @@ class SetupEngine:
                 self._step(job, key, "running")
                 if key == "check":
                     if body["kind"] == "create":
-                        check_target(body["target"])
+                        if body.get("checked_agent_target"):
+                            from .setup_wizard import check_agent_target
+                            check_agent_target(body["target"])
+                        else:
+                            check_target(body["target"])
                     elif not is_stage_home(Path(body["target"])):
                         raise SetupError("The saved stage folder is gone. Set up a new one.")
                     self._step(job, key, "done", "Answers valid; the folder is free." if body["kind"] == "create"
@@ -616,6 +646,9 @@ class SetupEngine:
                         job["home"] = body["target"]
                         self._step(job, key, "skipped", "Already created earlier.")
                         continue
+                    if body.get("checked_agent_target"):
+                        from .setup_wizard import check_agent_target
+                        check_agent_target(body["target"])
                     created = create_stage_home(body["target"], StageOptions(
                         channel=body["channel"], host_name=body["host_name"], agent_name=body["agent_name"]))
                     info = os.lstat(created["home"])

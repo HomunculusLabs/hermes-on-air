@@ -41,7 +41,7 @@ h1 { margin: 0 0 40px; font-size: calc(84px * var(--fit, 1)); line-height: 1.1; 
 #stage[data-mode="work"] { background: #101720; color: #e9f0f5; }
 #stage[data-mode="privacy"] { background: #000; }
 #stage[data-mode="work"] #footer, #stage[data-mode="privacy"] #footer { display: none; }
-#work { position: absolute; left: 96px; top: 66px; width: 1392px; height: 764px; display: flex; flex-direction: column; gap: 24px; }
+#work { position: absolute; left: 96px; right: 96px; top: 66px; height: 764px; display: flex; flex-direction: column; gap: 24px; }
 .work-header { display: flex; align-items: center; justify-content: space-between; gap: 25px; min-height: 96px; }
 .work-title { min-width: 0; font-size: 52px; line-height: 1.12; overflow-wrap: anywhere; }
 .work-title span { color: #8ca4b4; font-weight: 500; }
@@ -64,3 +64,13 @@ h1 { margin: 0 0 40px; font-size: calc(84px * var(--fit, 1)); line-height: 1.1; 
 .steps-heading { color: #b0c4ce; font-size: 34px; letter-spacing: .06em; }
 .step { display: grid; grid-template-columns: 1em minmax(0,1fr); gap: 8px; margin-top: calc(var(--step-size, 40px) * .55); font-size: var(--step-size, 40px); line-height: 1.22; overflow-wrap: anywhere; }
 .step-done { color: #86b8a4; } .step-current { color: #f2dca1; } .step-next { color: #a9b8c1; }
+/* A small OBS box needs one legible pane rather than two tiny columns. */
+@media (max-width: 700px) {
+  .work-panes {position:relative}
+  .work-steps {display:none}
+  .work-panes:has(.work-pane[data-kind="terminal"]) .work-pane:not([data-kind="terminal"]),
+  .work-pane[data-kind="terminal"] ~ .work-pane[data-kind="terminal"],
+  .work-panes:not(:has(.work-pane[data-kind="terminal"])) .work-pane:not(:first-child) {position:absolute;visibility:hidden;pointer-events:none;width:45%;height:100%}
+  .pane-content {font-size:72px;line-height:1.2;word-break:normal;overflow-wrap:anywhere}
+  .work-pane[data-kind="terminal"] .work-line:nth-last-child(n+5) {display:none}
+}

@@ -12,6 +12,18 @@ from ._support import ROOT, load_harness
 vi = load_harness()
 
 
+def test_source_digest_refuses_dotenv_without_reading(tmp_path, monkeypatch):
+    secret = tmp_path / '.env'
+    secret.write_text('synthetic secret')
+    original = Path.read_bytes
+    def guarded(path):
+        assert path.name != '.env', 'dotenv was opened'
+        return original(path)
+    monkeypatch.setattr(Path, 'read_bytes', guarded)
+    with pytest.raises(vi.HarnessError, match='\\.env'):
+        vi.tree_digest(tmp_path)
+
+
 def test_child_environment_carries_no_caller_secrets_or_paths(tmp_path, monkeypatch):
     for name in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "TWITCH_OAUTH", "ONAIR_TWITCH_CHANNEL",
                  "PYTHONPATH", "HERMES_PROFILE", "VIRTUAL_ENV"):

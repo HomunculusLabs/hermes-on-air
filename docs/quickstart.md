@@ -18,9 +18,11 @@ private show, and OBS if you want to preview the composition. See [compatibility
    captions only or voice. Never paste a password or stream key into chat.
 3. Review the setup effects. Type the approval command the agent returns yourself and confirm
    the card. The setup preview is private and may use a canned reply.
+   If the default stage folder is unsuitable, the plan shows a safe alternative and why it was chosen;
+   you can instead ask your agent to use a specific new absolute folder under your home.
 4. Ask for a private show with approval. Review its effects, type its returned approval command
    and confirm the card. This show uses your owner model and private typed chat, not Twitch.
-   Show or skip the drafts. A configured voice provider still needs a listening test.
+   Show or skip the drafts. A configured voice provider still needs a listening test; see [Voice](voice.md).
 5. If using OBS, ask the agent to prepare slides and sources. Check the OBS preview and audio
    yourself. For window sharing, pick a single window and follow the confirmation instructions.
 6. End the private show when finished. A rehearsal is not proof of a live stream or a real Twitch

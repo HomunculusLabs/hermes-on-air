@@ -81,15 +81,11 @@ def test_no_direct_secret_environ_or_dotenv_reads():
     secret_names.update(k for k, v in (manifest.get('config_schema') or {}).items() if isinstance(v, dict) and v.get('type') == 'secret')
     assert {'ONAIR_OBS_PASSWORD', 'ONAIR_JEV_API_KEY'} <= secret_names
     violations = []
-    # tools/verify_install.py is a developer-only harness reading its own synthetic
-    # throwaway stage file and hashing its fixture; it is not imported by the plugin.
-    # This exception is disclosed for maintainer review. Runtime modules have no exceptions.
-    developer_allowlist = {'tools/verify_install.py': 'synthetic disposable verification home'}
     # These two bounded comprehensions only pass through OS/runtime keys, not plugin secrets.
     dynamic_allowlist = {
         ('onair/stage_runtime.py', 184, 'os.environ[k]'): '_ENV_KEEP',
         ('onair/stage_runtime.py', 184, 'os.environ.get(k)'): '_ENV_KEEP',
-        ('tools/verify_install.py', 238, 'os.environ[k]'): '_PASSTHROUGH',
+        ('tools/verify_install.py', 240, 'os.environ[k]'): '_PASSTHROUGH',
     }
     paths = [root / '__init__.py'] + [p for folder in ('onair', 'dashboard', 'tools') for p in (root / folder).rglob('*.py')]
     for path in paths:
@@ -128,7 +124,7 @@ def test_no_direct_secret_environ_or_dotenv_reads():
                 if isinstance(node.func, ast.Name) and node.func.id == 'open':
                     mode = node.args[1] if len(node.args) > 1 else next((k.value for k in node.keywords if k.arg == 'mode'), None)
                     read = mode is None or not isinstance(mode, ast.Constant) or not isinstance(mode.value, str) or 'r' in mode.value or '+' in mode.value
-                if refers and read and str(path.relative_to(root)) not in developer_allowlist:
+                if refers and read:
                     violations.append(f'{path.relative_to(root)}:{node.lineno}: dotenv read')
     assert not violations, '\n'.join(violations)
 

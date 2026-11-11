@@ -179,7 +179,7 @@ def test_owner_home_registers_the_whole_join_and_unload_tears_down(tmp_path, _sk
     assert set(out["registered"]) == set(out["manifest_tools"]), out  # every declared tool is real
     assert PRESENT <= set(out["manifest_tools"]) and {"onair_show_plan", "onair_show_safety"} <= set(out["registered"])
     assert set(out["present_tools"]) == PRESENT, out["present_tools"]
-    assert out["skills"] == ["avatar", "first-stream", "host", "produce", "scene", "scene-build", "seed-bank", "setup", "show-day", "troubleshoot", "views"], out["skills"]
+    assert out["skills"] == ["avatar", "first-stream", "host", "live-build", "produce", "scene", "scene-build", "seed-bank", "setup", "show-day", "troubleshoot", "views"], out["skills"]
     for name, digest in out["scene_skill_sha"].items():
         assert digest == hashlib.sha256((ROOT / 'onair' / 'skills' / name / 'SKILL.md').read_bytes()).hexdigest()
     for name, digest in out['scene_templates'].items():

@@ -6,7 +6,7 @@ const elements = new Map(), players = [];
 function element() { return {hidden:false,textContent:'',style:{},dataset:{},offsetWidth:0,children:[],
   classList:{add(){},remove(){},toggle(){}},addEventListener(){},appendChild(){},querySelector(){return null}}; }
 const document = {getElementById(id){if(!elements.has(id)) elements.set(id,element()); return elements.get(id);},
-  body:element(),documentElement:{style:{setProperty(){}}},createElement:element};
+  body:element(),documentElement:{dataset:{},style:{setProperty(){}}},createElement:element};
 let source;
 class EventSource {constructor(){source=this} close(){}}
 class Audio {constructor(url){this.src=url;this.paused=false;this.plays=0;players.push(this)}

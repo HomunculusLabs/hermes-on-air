@@ -22,18 +22,16 @@ Everything else is a note, and notes don't block.
 ## Checks
 
 Run these on the PR head and on its base, so problems already on `main` aren't blamed on the PR.
-Some integration tests require a Hermes runtime on `PYTHONPATH`; installing only the dependencies
-below in a clean environment is not sufficient for the complete suite:
+The dependency-only command is a smoke subset, not the complete suite. See the README for the
+Hermes-runtime full-suite command and its prerequisites; record passes and skips separately.
 
 ```bash
-uvx --with pytest --with pyyaml --with websockets --with ruamel.yaml --with fastapi --with httpx pytest -q -p no:cacheprovider
+uvx --with pytest --with pyyaml --with websockets --with ruamel.yaml --with fastapi --with httpx pytest -q -p no:cacheprovider tests/core tests/guard tests/wordfilter tests/portability
 hermes plugins validate . --install-deps
 python tools/dev_fake_show.py --guard real --voice --once --duration 20 --port 0
 ```
 
 The fake show uses an ephemeral port with `--port 0`, avoiding a conflict with an existing show.
-For Hermes-dependent coverage, run the suite with the supported Hermes Python 3.14 environment
-and checkout on `PYTHONPATH`; record its version and any skips separately from the pure suite.
 
 Keep probe and scratch scripts outside the checkout. `hermes plugins validate` scans every file
 under the plugin directory, including gitignored ones.

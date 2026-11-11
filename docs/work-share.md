@@ -1,5 +1,8 @@
 # Work view
 
+For a complete project session, see [Live build](live-build.md); automatic model-written relay
+notes are not supported by the current owner-word relay contract.
+
 Work view is a public, text-only page the owner agent writes to. It uses the **existing presentation Browser Source**, called `slides` in Views; it is not a screen capture, terminal capture, file reader, or a new OBS input. Viewers see only explicitly published text. Use the owner-selected [window share](views.md#share-one-window) instead when the audience needs to see an actual application and its interaction. The owner selects and, where required, confirms that window.
 
 In the local owner chat, try: “Share what you are working on in the small box.” The agent calls `onair_work_share` to show the relevant function or test output, then `onair_layout` to put the `slides` source in a sub box. Example:

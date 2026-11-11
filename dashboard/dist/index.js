@@ -562,8 +562,11 @@
   function Desk(props) {
     const { get, post } = (props && props.api) || LIVE_API;
     const practice = !!(props && props.practice);
-    const [data, setData] = useState(null);
-    const [queue, setQueue] = useState([]);
+    const coreStore = !practice && props && props.coreStore;
+    const cached = coreStore && coreStore.current, cacheAge = cached && Date.now() - cached.at;
+    const fresh = cached && cacheAge >= 0 && cacheAge < 4000 ? cached : null;
+    const [data, setData] = useState(() => fresh ? fresh.state : null);
+    const [queue, setQueue] = useState(() => fresh ? fresh.queue : []);
     const [receipts, setReceipts] = useState([]);
     const [preparing, setPreparing] = useState([]);
     const [guardLimit, setGuardLimit] = useState({ signature: null, visible: 0 });
@@ -580,12 +583,13 @@
     // Optional semantic assistance status (shadow only); null = unavailable, never drives a control.
     const [assist, setAssist] = useState(null);
     const [showMoreAlerts, setShowMoreAlerts] = useState(false);
-    const [online, setOnline] = useState(false);
+    const [online, setOnline] = useState(() => !!fresh);
+    const [lastGood, setLastGood] = useState(() => fresh ? fresh.at : 0);
     const [talkOpen, setTalkOpen] = useState(false);
     const [micNotice, setMicNotice] = useState('');
     const [hostFence, setHostFence] = useState(0);
     // phase: connecting (no answer yet) · setup (never connected) · online · lost (was connected).
-    const [conn, setConn] = useState({ phase: "connecting", lastOk: 0, reason: "", checks: 0 });
+    const [conn, setConn] = useState(() => fresh ? { phase: "online", lastOk: fresh.at, reason: "", checks: 0 } : { phase: "connecting", lastOk: 0, reason: "", checks: 0 });
     const [notice, setNotice] = useState("");
     const [busy, setBusy] = useState(false);
     const [selected, setSelected] = useState(0);
@@ -602,7 +606,7 @@
     // When the current notice was set, so an old result reads as history ("Last action: … · 12 s ago").
     const noticeAt = useRef({ text: "", at: 0 });
     if (noticeAt.current.text !== notice) noticeAt.current = { text: notice, at: Date.now() };
-    current.current = { data, queue, online, busy, selected };
+    current.current = { data, queue, online, busy, selected, lastGood };
 
     async function refresh() {
       const gen = ++generation.current;
@@ -618,6 +622,7 @@
       if (!answered || state.epoch !== pend.epoch) {
         // Fail closed: nothing stale stays actionable. The last state is kept only as a labeled
         // "last confirmed" summary; it never drives a control, chip or banner.
+        if (coreStore) coreStore.current = null;
         setOnline(false);
         setQueue([]);
         setReceiptsAvailable(false);
@@ -631,10 +636,13 @@
           reason: answered ? "inconsistent" : "unreachable", checks: c.checks + 1 }));
         return null;
       }
+      const at = Date.now();
+      if (coreStore) coreStore.current = { state, queue: pend.pending, at };
+      setLastGood(at);
       setData(state);
       setQueue(pend.pending);
       setOnline(true);
-      setConn({ phase: "online", lastOk: Date.now(), reason: "", checks: 0 });
+      setConn({ phase: "online", lastOk: at, reason: "", checks: 0 });
       setSelected((n) => Math.min(n, Math.max(0, pend.pending.length - 1)));
       optional.then(([r, a, ar, asr]) => {
         if (!alive.current || gen !== generation.current || safetyPending.current) return;
@@ -674,6 +682,19 @@
         window.clearInterval(timer);
       };
     }, []);
+
+    useEffect(() => {
+      if (!online || !lastGood) return;
+      const age = Date.now() - lastGood;
+      const timer = window.setTimeout(() => {
+        if (coreStore) coreStore.current = null;
+        setOnline(false); setQueue([]); setReceiptsAvailable(false); setReceipts([]);
+        setAlerts(null); setRecent(null); setAssist(null); setAlertDraft(null);
+        setHostFence(n => n + 1);
+        setConn(c => ({ phase: "lost", lastOk: c.lastOk, reason: "unreachable", checks: c.checks + 1 }));
+      }, age < 0 ? 0 : Math.max(0, 4000 - age));
+      return () => window.clearTimeout(timer);
+    }, [online, lastGood]);
 
     const armedTalk = !!(!practice && online && data && data.live === true && data.host_turns && data.host_turns.enabled === true);
     useEffect(() => {if (armedTalk) setTalkOpen(true);}, [armedTalk]);
@@ -750,7 +771,9 @@
      * stop) bypass the action lock and clear the queue optimistically: they must
      * never wait on the model, the queue or a poll. */
     async function action(path, body, safety) {
-      if (!current.current.online || (!safety && (actionLock.current || safetyPending.current))) return;
+      const age = Date.now() - current.current.lastGood;
+      if (!current.current.online || age < 0 || age >= 4000 || (!safety && (actionLock.current || safetyPending.current))) return;
+      if (coreStore) coreStore.current = null;
       const label = actionLabel(path, body, current.current.data && current.current.data.mode);
       const approvalBoot = current.current.data && current.current.data.voice_boot;
       if (path === "stop" || (path === "privacy" && body && body.on === true) ||
@@ -997,6 +1020,11 @@
           : "Not connected to a show yet. Follow the steps below.";
 
     const plain = plainStatus(shown, online, practice, queue.length, preflightBlocked, lost);
+    const privacyHelp = shown && shown.privacy
+      ? "Privacy is active: viewers see 'Be right back', audio is blocked and pending work is cleared. Press P to uncover."
+      : "Covers the show ('Be right back'), blocks audio and clears pending work. Press P again to uncover.";
+    const muteHelp = "Mutes audio; captions continue. Press M again to unmute.";
+    const stopHelp = "Cancels speech and pending lines and pauses a live show. Return to approval to resume.";
     return h("main", { className: "onair-desk" + (practice ? " onair-practice-desk" : "") + (armedTalk ? " onair-has-talk" : "") },
       shown && shown.privacy && h("div", { className: "onair-privacy-banner", role: "status" }, PRIVACY_BANNER),
       h("header", { className: "onair-header" },
@@ -1004,7 +1032,7 @@
         h("div", { className: "onair-banner", role: "status" }, bannerChips),
         preflightPanel),
       h("section", { className: "onair-plain", "aria-label": "What is happening now" },
-        h("ul", { className: "onair-plain-facts" }, plain.facts.map((fact) => h("li", { key: fact.label, className: "onair-fact onair-fact-" + fact.tone },
+        h("ul", { className: "onair-plain-facts" }, plain.facts.map((fact) => h("li", { key: fact.label, className: "onair-fact onair-fact-" + fact.tone, title: fact.value, tabIndex: 0 },
           h("span", { className: "onair-fact-label" }, fact.label + ": "), h("strong", null, fact.value)))),
         h("p", { className: "onair-next" }, h("span", { className: "onair-next-label" }, "Next: "), plain.next)),
       // One grid area for the notice and the setup/lost guide, so a connected desk keeps its layout.
@@ -1024,15 +1052,13 @@
           : "Available once a show is connected. Privacy, mute and stop then fire instantly, even while the model is busy."),
         h("div", { className: "onair-safety-actions" },
           h("div", null, button(shown && shown.privacy ? "Uncover (P)" : "Privacy cut (P)", () => safetyKey("privacy"),
-            { disabled: !online, className: "onair-privacy-button", "aria-pressed": !!(shown && shown.privacy) }),
-            h("p", { className: "onair-help" }, shown && shown.privacy
-              ? "Privacy is active: viewers see 'Be right back', audio is blocked and pending work is cleared. Press P to uncover."
-              : "Covers the show ('Be right back'), blocks audio and clears pending work. Press P again to uncover.")),
+            { disabled: !online, className: "onair-privacy-button", "aria-pressed": !!(shown && shown.privacy), title: privacyHelp, "aria-describedby": "onair-privacy-help" }),
+            h("p", { className: "onair-help", id: "onair-privacy-help" }, privacyHelp)),
           h("div", null, button(shown && shown.muted ? "Unmute (M)" : "Mute all (M)", () => safetyKey("mute"),
-            { disabled: !online, "aria-pressed": !!(shown && shown.muted) }),
-            h("p", { className: "onair-help" }, "Mutes audio; captions continue. Press M again to unmute.")),
-          h("div", null, button("Stop all (Esc)", () => safetyKey("stop"), { disabled: !online, className: "onair-stop" }),
-            h("p", { className: "onair-help" }, "Cancels speech and pending lines and pauses a live show. Return to approval to resume.")))),
+            { disabled: !online, "aria-pressed": !!(shown && shown.muted), title: muteHelp, "aria-describedby": "onair-mute-help" }),
+            h("p", { className: "onair-help", id: "onair-mute-help" }, muteHelp)),
+          h("div", null, button("Stop all (Esc)", () => safetyKey("stop"), { disabled: !online, className: "onair-stop", title: stopHelp, "aria-describedby": "onair-stop-help" }),
+            h("p", { className: "onair-help", id: "onair-stop-help" }, stopHelp)))),
 
       !practice && h("details", {className:"onair-views-disclosure"},
         h("summary", null, "Views and window sharing"), h(Views)),
@@ -1744,12 +1770,16 @@
     return h(QuickStart, { onAdvanced: () => setAdvanced(true) });
   }
 
-  const TABS = [["live", "Live"], ["details", "Details"]];
-  const SECONDARY = [["setup", "Start here"], ["practice", "Practice"], ["help", "Help"]];
+  const SECONDARY = [["live", "Live"], ["advanced", "Full desk (advanced)"], ["setup", "Start here"], ["practice", "Practice"], ["help", "Help"]];
   function App() {
     const stored = load(TAB_KEY, {});
-    const [tab, setTab] = useState(stored.tab === "desk" ? "details" : [...TABS, ...SECONDARY].some(([name]) => name === stored.tab) ? stored.tab : "live");
-    const secondary = useRef(null);
+    const [tab, setTab] = useState(SECONDARY.some(([name]) => name === stored.tab) ? stored.tab : "live");
+    const secondary = useRef(null), coreStore = useRef(null), leavingLive = useRef(false);
+    useEffect(() => {
+      function outside(event) { if (secondary.current && secondary.current.open && !secondary.current.contains(event.target)) secondary.current.open = false; }
+      document.addEventListener("click", outside);
+      return () => document.removeEventListener("click", outside);
+    }, []);
     const [Live, setLive] = useState(() => window.OnAirLive || null), [liveError, setLiveError] = useState(false);
     useEffect(() => { if (window.OnAirLive) return; let active = true; const script = document.createElement("script"); script.src = LIVE_ASSET; script.onload = () => { if (active) setLive(() => window.OnAirLive); }; script.onerror = () => { if (active) setLiveError(true); }; document.head.appendChild(script); return () => { active = false; script.remove(); }; }, []);
     const [status, setStatus] = useState(null);
@@ -1762,20 +1792,26 @@
       });
       return () => { live = false; };
     }, []);
-    const go = (name) => { const target = name === "desk" ? "details" : name; if (secondary.current) secondary.current.open = false; setTab(target); save(TAB_KEY, { tab: target }); };
+    useEffect(() => {
+      if (micNotice !== "Mic turned off: you left the Live tab.") return;
+      const timer = window.setTimeout(() => setMicNotice(""), 4500);
+      return () => window.clearTimeout(timer);
+    }, [micNotice]);
+    const liveMicStatus = (text) => setMicNotice(leavingLive.current && text === "Open mic turned off: desk closed or lost the stage."
+      ? "Mic turned off: you left the Live tab." : text);
+    const go = (name) => { const target = name === "desk" ? "live" : name; leavingLive.current = tab === "live" && target !== "live"; if (secondary.current) secondary.current.open = false; setTab(target); save(TAB_KEY, { tab: target }); };
     const replay = () => { save(TOUR_KEY, { step: 0, skipped: false }); go("practice"); };
     return h("div", { className: "onair-app" },
-      h("nav", { className: "onair-tabs", "aria-label": "On Air sections" }, TABS.map(([name, label]) =>
-        h("button", { key: name, type: "button", className: "onair-tab" + (tab === name ? " onair-tab-current" : ""), "aria-current": tab === name ? "page" : undefined, onClick: () => go(name) }, label)),
+      h("nav", { className: "onair-tabs", "aria-label": "On Air sections" },
         h("details", {className:"onair-secondary", ref:secondary, onKeyDown:e=>{if(e.key === "Escape" && secondary.current.open){e.stopPropagation();secondary.current.open=false;secondary.current.querySelector("summary").focus();}}},
-          h("summary", {className:SECONDARY.some(([name])=>name===tab) ? "onair-secondary-current" : undefined}, "Setup & help"),
+          h("summary", {className:tab !== "live" ? "onair-secondary-current" : undefined}, "Setup & help"),
           h("div", {className:"onair-secondary-items"}, SECONDARY.map(([name,label])=>h("button", {type:"button",key:name,"aria-current":tab===name?"page":undefined,onClick:()=>go(name)},label))))),
-      micNotice && h("p", {role:"status", className:"onair-mic-notice"}, micNotice),
-      tab === "live" ? (Live ? h(Live, { HostLine, onMicStatus:setMicNotice }) : h("p", { role: "status" }, liveError ? "Live could not load. Open Details." : "Loading Live…"))
+      micNotice && h("p", {role:"status", className:"onair-mic-notice" + (micNotice === "Mic turned off: you left the Live tab." ? " onair-mic-notice-transient" : "")}, micNotice),
+      tab === "live" ? (Live ? h(Live, { HostLine, onMicStatus:liveMicStatus, coreStore }) : h("p", { role: "status" }, liveError ? "Live could not load. Open Full desk (advanced) from Setup & help." : "Loading Live…"))
         : tab === "setup" ? h(SetupTab, { status, onPractice: () => go("practice"), onDesk: () => go("desk") })
         : tab === "practice" ? h(Practice, { onSetup: () => go("setup"), onDesk: () => go("desk") })
           : tab === "help" ? h(Help, { onReplay: replay, onSetup: () => go("setup") })
-            : h(Desk, { onSetup: () => go("setup"), onPractice: () => go("practice"), onMicStatus:setMicNotice }));
+            : h(Desk, { onSetup: () => go("setup"), onPractice: () => go("practice"), onMicStatus:setMicNotice, coreStore }));
   }
 
   window.__HERMES_PLUGINS__.register("on-air", App);

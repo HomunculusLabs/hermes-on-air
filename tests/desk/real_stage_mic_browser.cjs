@@ -17,7 +17,8 @@ const assert=require('node:assert/strict');
     const width=Number(process.env.ONAIR_MIC_WIDTH), page=await browser.newPage({viewport:{width,height:900}});
     const errors=[];page.on('pageerror',e=>errors.push(String(e)));
     await page.goto(process.env.ONAIR_MIC_URL);
-    await page.getByRole('button',{name:'Details',exact:true}).click();
+    await page.locator('.onair-secondary summary').click();
+    await page.getByRole('button',{name:'Full desk (advanced)',exact:true}).click();
     await page.locator('.onair-talk-disclosure > summary').waitFor({timeout:15000});
     const readable = await page.evaluate(() => {
       const text=document.querySelector('.onair-talk-disclosure > summary');
